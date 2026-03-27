@@ -32,6 +32,18 @@ class MarkerDetector:
         self.config = config
         k = config.morphology_kernel_size
         self.kernel = np.ones((k, k), dtype=np.uint8)
+        self._board_mask: Optional[np.ndarray] = None
+
+    def set_board_roi(self, corners_px: Optional[np.ndarray]) -> None:
+        """Set a polygon ROI from calibration corners so detection ignores areas outside the board."""
+        if corners_px is None:
+            self._board_mask = None
+            return
+        # corners_px shape: (4, 2) — TL, TR, BR, BL
+        poly = corners_px.astype(np.int32).reshape((-1, 1, 2))
+        mask = np.zeros((self.config.frame_height, self.config.frame_width), dtype=np.uint8)
+        cv2.fillPoly(mask, [poly], 255)
+        self._board_mask = mask
 
     def _make_mask(self, hsv: np.ndarray, ranges: list[HSVRange] | tuple[HSVRange, ...]) -> np.ndarray:
         mask = None
@@ -70,6 +82,10 @@ class MarkerDetector:
         hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
         red_mask = self._make_mask(hsv, self.config.red_ranges)
         blue_mask = self._make_mask(hsv, (self.config.blue_range,))
+
+        if self._board_mask is not None:
+            red_mask = cv2.bitwise_and(red_mask, self._board_mask)
+            blue_mask = cv2.bitwise_and(blue_mask, self._board_mask)
 
         head_px, head_area, head_found = self._largest_centroid(red_mask)
         tail_px, tail_area, tail_found = self._largest_centroid(blue_mask)

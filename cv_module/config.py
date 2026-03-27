@@ -19,8 +19,8 @@ class CVConfig:
 
     # Physical board dimensions in meters.
     # Change these to your actual whiteboard size.
-    board_width_m: float = 0.2159
-    board_height_m: float = 0.2794
+    board_width_m: float = 0.6
+    board_height_m: float = 0.4
 
     # Visualization scaling for the rectified board view.
     rectified_pixels_per_meter: int = 2500

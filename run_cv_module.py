@@ -80,6 +80,8 @@ def main() -> None:
 
     last_print_time = 0.0
     calibrator.load()
+    if calibrator.is_calibrated:
+        detector.set_board_roi(calibrator.image_corners_px)
 
     print("CV module started.")
     print("Markers: RED circle = head/front, BLUE circle = tail/rear")
@@ -181,9 +183,13 @@ def main() -> None:
             if key == ord('c'):
                 print("Calibration mode: click TL, TR, BR, BL then press s.")
                 calibrator.interactive_calibrate(frame)
+                if calibrator.is_calibrated:
+                    detector.set_board_roi(calibrator.image_corners_px)
             elif key == ord('l'):
                 loaded = calibrator.load()
                 print(f"Calibration loaded: {loaded}")
+                if calibrator.is_calibrated:
+                    detector.set_board_roi(calibrator.image_corners_px)
             elif key == ord('r'):
                 estimator.reset()
                 print("State estimator reset.")
