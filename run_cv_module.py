@@ -14,12 +14,15 @@ Controls:
 
 from __future__ import annotations
 
+import json
 import math
+import socket
 import time
 
 import cv2
 import numpy as np
 
+from config import PI_IP, COMMAND_PORT
 from cv_module import BoardCalibrator, CVConfig, MarkerDetector, StateEstimator
 from cv_module.visualizer import Visualizer
 from cv_module.waypoint_controller import WaypointController
@@ -65,6 +68,9 @@ def main() -> None:
     estimator = StateEstimator(config)
     visualizer = Visualizer()
     waypoint_controller = WaypointController()
+
+    udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    pi_addr = (PI_IP, COMMAND_PORT)
 
     cap = cv2.VideoCapture(config.camera_index)
     if not cap.isOpened():
@@ -173,6 +179,17 @@ def main() -> None:
                 )
                 cv2.imshow(WINDOW_BOARD, board_vis)
 
+            # Send command + measured velocity to Pi over UDP
+            if control_cmd is not None and not control_cmd.reached:
+                packet = {
+                    "throttle": control_cmd.throttle,
+                    "steering": control_cmd.steering,
+                    "measured_v": state.v,
+                }
+            else:
+                packet = {"throttle": 0.0, "steering": 0.0, "measured_v": 0.0}
+            udp_sock.sendto(json.dumps(packet).encode(), pi_addr)
+
             if config.show_debug_masks and detection.red_mask is not None and detection.blue_mask is not None:
                 cv2.imshow("Mask Red", detection.red_mask)
                 cv2.imshow("Mask Blue", detection.blue_mask)
@@ -195,6 +212,7 @@ def main() -> None:
                 print("State estimator reset.")
 
     finally:
+        udp_sock.close()
         cap.release()
         cv2.destroyAllWindows()
 

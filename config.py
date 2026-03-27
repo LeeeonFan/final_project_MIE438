@@ -76,3 +76,19 @@ RIGHT_MOTOR_KD = 0.0
 
 MOTOR_PWM_MIN = -1.0
 MOTOR_PWM_MAX = 1.0
+
+
+# =========================================================
+# WHEEL
+# =========================================================
+
+WHEEL_RADIUS_M = 0.015       # 15 mm
+
+
+# =========================================================
+# NETWORK (laptop -> Pi bridge)
+# =========================================================
+
+PI_IP = "172.20.10.2"       # set to your Pi's IP address
+COMMAND_PORT = 5005
+COMMAND_TIMEOUT_S = 0.5       # seconds; Pi stops motors if no command received
