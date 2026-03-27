@@ -5,6 +5,8 @@ Hardware Abstraction Layer for:
 - 2 DC motors driven by L298N
 - 1 steering servo
 
+Uses lgpio (compatible with Raspberry Pi 5).
+
 Inputs:
     cmd = {
         "left_motor_pwm_value": float in [-1, 1],
@@ -15,7 +17,7 @@ Inputs:
 This module converts controller outputs into GPIO signals.
 """
 
-import pigpio
+import lgpio
 
 from config import (
     LEFT_MOTOR_IN1,
@@ -26,18 +28,18 @@ from config import (
     RIGHT_MOTOR_PWM,
     STEERING_SERVO_PIN,
     MOTOR_PWM_FREQUENCY,
-    MOTOR_PWM_RANGE,
     SERVO_MIN_US,
     SERVO_MAX_US,
 )
 from utils import clamp
 
+# GPIO chip number: 4 for Pi 5, 0 for Pi 4 and earlier
+GPIO_CHIP = 4
+
 
 class HAL:
     def __init__(self):
-        self.pi = pigpio.pi()
-        if not self.pi.connected:
-            raise RuntimeError("Failed to connect to pigpio daemon.")
+        self.h = lgpio.gpiochip_open(GPIO_CHIP)
 
         # Store pins
         self.left_motor_in1 = LEFT_MOTOR_IN1
@@ -50,23 +52,11 @@ class HAL:
 
         self.steering_servo_pin = STEERING_SERVO_PIN
 
-        # Configure GPIO modes
-        self.pi.set_mode(self.left_motor_in1, pigpio.OUTPUT)
-        self.pi.set_mode(self.left_motor_in2, pigpio.OUTPUT)
-        self.pi.set_mode(self.left_motor_pwm, pigpio.OUTPUT)
-
-        self.pi.set_mode(self.right_motor_in1, pigpio.OUTPUT)
-        self.pi.set_mode(self.right_motor_in2, pigpio.OUTPUT)
-        self.pi.set_mode(self.right_motor_pwm, pigpio.OUTPUT)
-
-        self.pi.set_mode(self.steering_servo_pin, pigpio.OUTPUT)
-
-        # Configure motor PWM
-        self.pi.set_PWM_frequency(self.left_motor_pwm, MOTOR_PWM_FREQUENCY)
-        self.pi.set_PWM_frequency(self.right_motor_pwm, MOTOR_PWM_FREQUENCY)
-
-        self.pi.set_PWM_range(self.left_motor_pwm, MOTOR_PWM_RANGE)
-        self.pi.set_PWM_range(self.right_motor_pwm, MOTOR_PWM_RANGE)
+        # Claim direction pins as outputs
+        lgpio.gpio_claim_output(self.h, self.left_motor_in1)
+        lgpio.gpio_claim_output(self.h, self.left_motor_in2)
+        lgpio.gpio_claim_output(self.h, self.right_motor_in1)
+        lgpio.gpio_claim_output(self.h, self.right_motor_in2)
 
         # Initialize outputs to safe state
         self.stop_all()
@@ -87,22 +77,22 @@ class HAL:
             PWM enable pin
         """
         pwm_value = clamp(pwm_value, -1.0, 1.0)
-        duty = int(abs(pwm_value) * MOTOR_PWM_RANGE)
+        duty_percent = abs(pwm_value) * 100.0
 
         if pwm_value > 0:
             # Forward
-            self.pi.write(in1_pin, 1)
-            self.pi.write(in2_pin, 0)
+            lgpio.gpio_write(self.h, in1_pin, 1)
+            lgpio.gpio_write(self.h, in2_pin, 0)
         elif pwm_value < 0:
             # Reverse
-            self.pi.write(in1_pin, 0)
-            self.pi.write(in2_pin, 1)
+            lgpio.gpio_write(self.h, in1_pin, 0)
+            lgpio.gpio_write(self.h, in2_pin, 1)
         else:
             # Stop
-            self.pi.write(in1_pin, 0)
-            self.pi.write(in2_pin, 0)
+            lgpio.gpio_write(self.h, in1_pin, 0)
+            lgpio.gpio_write(self.h, in2_pin, 0)
 
-        self.pi.set_PWM_dutycycle(pwm_pin, duty)
+        lgpio.tx_pwm(self.h, pwm_pin, MOTOR_PWM_FREQUENCY, duty_percent)
 
     def _set_servo(self, pulse_width_us):
         """
@@ -114,7 +104,7 @@ class HAL:
             Servo pulse width in microseconds
         """
         pulse_width_us = int(clamp(pulse_width_us, SERVO_MIN_US, SERVO_MAX_US))
-        self.pi.set_servo_pulsewidth(self.steering_servo_pin, pulse_width_us)
+        lgpio.tx_servo(self.h, self.steering_servo_pin, pulse_width_us)
 
     def apply(self, cmd):
         """
@@ -153,18 +143,18 @@ class HAL:
         """
         Stop both motors and center/hold servo safely.
         """
-        self.pi.write(self.left_motor_in1, 0)
-        self.pi.write(self.left_motor_in2, 0)
-        self.pi.write(self.right_motor_in1, 0)
-        self.pi.write(self.right_motor_in2, 0)
+        lgpio.gpio_write(self.h, self.left_motor_in1, 0)
+        lgpio.gpio_write(self.h, self.left_motor_in2, 0)
+        lgpio.gpio_write(self.h, self.right_motor_in1, 0)
+        lgpio.gpio_write(self.h, self.right_motor_in2, 0)
 
-        self.pi.set_PWM_dutycycle(self.left_motor_pwm, 0)
-        self.pi.set_PWM_dutycycle(self.right_motor_pwm, 0)
+        lgpio.tx_pwm(self.h, self.left_motor_pwm, MOTOR_PWM_FREQUENCY, 0)
+        lgpio.tx_pwm(self.h, self.right_motor_pwm, MOTOR_PWM_FREQUENCY, 0)
 
     def cleanup(self):
         """
-        Stop outputs and release pigpio connection.
+        Stop outputs and release GPIO handle.
         """
         self.stop_all()
-        self.pi.set_servo_pulsewidth(self.steering_servo_pin, 0)
-        self.pi.stop()
+        lgpio.tx_servo(self.h, self.steering_servo_pin, 0)
+        lgpio.gpiochip_close(self.h)
