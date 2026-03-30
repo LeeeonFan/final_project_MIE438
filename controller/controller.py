@@ -1,6 +1,11 @@
 import math
 import sys
+import os
 import pygame
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from servo_controller import ServoController
 
 pygame.init()
 pygame.joystick.init()
@@ -112,8 +117,126 @@ def normalize_trigger(v):
     return v
 
 
+class ControllerManager:
+    """
+    Manages PS5 controller input and converts to servo commands.
+    """
+
+    def __init__(self):
+        self.joystick = None
+        self.servo_controller = ServoController()
+        self._init_joystick()
+
+    def _init_joystick(self):
+        """Initialize the joystick connection."""
+        if pygame.joystick.get_count() > 0:
+            self.joystick = pygame.joystick.Joystick(0)
+            self.joystick.init()
+
+    def reconnect(self):
+        """Attempt to reconnect joystick."""
+        self._init_joystick()
+
+    def is_connected(self):
+        """Check if controller is connected."""
+        return self.joystick is not None and pygame.joystick.get_count() > 0
+
+    def get_raw_input(self):
+        """
+        Get raw controller input values.
+
+        Returns
+        -------
+        dict
+            Raw input state from controller with keys like:
+            - left_x, left_y: Left stick position
+            - right_x, right_y: Right stick position
+            - l2, r2: Trigger values (0.0-1.0)
+            - buttons: dict of button states
+        """
+        if not self.is_connected():
+            return None
+
+        js = self.joystick
+
+        left_x = safe_axis(js, 0)
+        left_y = safe_axis(js, 1)
+        right_x = safe_axis(js, 2)
+        right_y = safe_axis(js, 3)
+
+        raw_l2 = safe_axis(js, 4) if js.get_numaxes() > 4 else 0.0
+        raw_r2 = safe_axis(js, 5) if js.get_numaxes() > 5 else 0.0
+
+        l2 = normalize_trigger(raw_l2)
+        r2 = normalize_trigger(raw_r2)
+
+        buttons = {
+            "cross": safe_button(js, 0),
+            "circle": safe_button(js, 1),
+            "square": safe_button(js, 2),
+            "triangle": safe_button(js, 3),
+            "create": safe_button(js, 4),
+            "ps": safe_button(js, 5),
+            "options": safe_button(js, 6),
+            "l3": safe_button(js, 7),
+            "r3": safe_button(js, 8),
+            "l1": safe_button(js, 9),
+            "r1": safe_button(js, 10),
+            "dpad_up": safe_button(js, 11),
+            "dpad_down": safe_button(js, 12),
+            "dpad_left": safe_button(js, 13),
+            "dpad_right": safe_button(js, 14),
+            "touchpad": safe_button(js, 15),
+        }
+
+        return {
+            "left_x": left_x,
+            "left_y": left_y,
+            "right_x": right_x,
+            "right_y": right_y,
+            "l2": l2,
+            "r2": r2,
+            "raw_l2": raw_l2,
+            "raw_r2": raw_r2,
+            "buttons": buttons,
+        }
+
+    def get_servo_commands(self):
+        """
+        Get servo commands based on controller input.
+
+        By default, right stick X-axis maps to steering angle.
+
+        Returns
+        -------
+        dict
+            Servo command with keys:
+            - steering_pwm_value_us: PWM pulse width in microseconds
+            - steering_angle_input: Input steering angle in degrees
+        """
+        raw_input = self.get_raw_input()
+
+        if raw_input is None:
+            return None
+
+        # Map right stick X-axis to steering angle
+        # Assuming max steering angle maps to full stick deflection (-1 to 1)
+        # Get max steering angle from servo controller
+        max_angle = self.servo_controller.max_steering_angle
+        steering_angle = raw_input["right_x"] * max_angle
+
+        servo_cmd = {"steering_angle": steering_angle}
+        servo_output = self.servo_controller.update(servo_cmd)
+
+        return {
+            **servo_output,
+            "steering_angle_input": steering_angle,
+            "raw_input": raw_input,
+        }
+
+
 def main():
-    joystick = get_controller()
+    controller_manager = ControllerManager()
 
     while True:
         for event in pygame.event.get():
@@ -121,82 +244,80 @@ def main():
                 pygame.quit()
                 sys.exit()
             elif event.type == pygame.JOYDEVICEADDED:
-                joystick = get_controller()
+                controller_manager.reconnect()
             elif event.type == pygame.JOYDEVICEREMOVED:
-                joystick = get_controller()
+                controller_manager.reconnect()
 
         screen.fill(BG)
-        draw_text("PS5 Controller Visualizer", 30, 20, PURPLE)
-        draw_text("Connect a DualSense controller and press buttons/move sticks.", 30, 55, GRAY)
+        draw_text("PS5 Controller Visualizer + Servo Control", 30, 20, PURPLE)
+        draw_text("Connect a DualSense controller. Right stick controls servo.", 30, 55, GRAY)
 
-        if joystick is None:
+        if not controller_manager.is_connected():
             draw_text("No controller detected.", 30, 120, RED)
             pygame.display.flip()
             clock.tick(60)
             continue
 
-        draw_text(f"Controller: {joystick.get_name()}", 30, 100, WHITE)
+        raw_input = controller_manager.get_raw_input()
+        servo_cmd = controller_manager.get_servo_commands()
 
-        left_x = safe_axis(joystick, 0)
-        left_y = safe_axis(joystick, 1)
-        right_x = safe_axis(joystick, 2)
-        right_y = safe_axis(joystick, 3)
+        draw_text(f"Controller: {controller_manager.joystick.get_name()}", 30, 100, WHITE)
 
-        raw_l2 = safe_axis(joystick, 4) if joystick.get_numaxes() > 4 else 0.0
-        raw_r2 = safe_axis(joystick, 5) if joystick.get_numaxes() > 5 else 0.0
+        left_x = raw_input["left_x"]
+        left_y = raw_input["left_y"]
+        right_x = raw_input["right_x"]
+        right_y = raw_input["right_y"]
 
-        l2 = normalize_trigger(raw_l2)
-        r2 = normalize_trigger(raw_r2)
+        l2 = raw_input["l2"]
+        r2 = raw_input["r2"]
+        raw_l2 = raw_input["raw_l2"]
+        raw_r2 = raw_input["raw_r2"]
 
-        l3 = safe_button(joystick, 7)
-        r3 = safe_button(joystick, 8)
+        l3 = raw_input["buttons"]["l3"]
+        r3 = raw_input["buttons"]["r3"]
 
         draw_stick(220, 300, 90, left_x, left_y, "Left Stick", pressed=bool(l3))
-        draw_stick(460, 300, 90, right_x, right_y, "Right Stick", pressed=bool(r3))
+        draw_stick(460, 300, 90, right_x, right_y, "Right Stick (Steering)", pressed=bool(r3))
 
-        draw_button(180, 170, 28, "L1", safe_button(joystick, 9))
-        draw_button(500, 170, 28, "R1", safe_button(joystick, 10))
+        draw_button(180, 170, 28, "L1", raw_input["buttons"]["l1"])
+        draw_button(500, 170, 28, "R1", raw_input["buttons"]["r1"])
         draw_trigger(120, 470, 50, 140, l2, "L2")
         draw_trigger(490, 470, 50, 140, r2, "R2")
 
-        draw_button(760, 270, 24, "\u25b3", safe_button(joystick, 3))
-        draw_button(810, 320, 24, "\u25cb", safe_button(joystick, 1))
-        draw_button(710, 320, 24, "\u25a1", safe_button(joystick, 2))
-        draw_button(760, 370, 24, "\u00d7", safe_button(joystick, 0))
+        draw_button(760, 270, 24, "\u25b3", raw_input["buttons"]["triangle"])
+        draw_button(810, 320, 24, "\u25cb", raw_input["buttons"]["circle"])
+        draw_button(710, 320, 24, "\u25a1", raw_input["buttons"]["square"])
+        draw_button(760, 370, 24, "\u00d7", raw_input["buttons"]["cross"])
 
-        draw_button(120, 270, 22, "\u2191", safe_button(joystick, 11))
-        draw_button(120, 370, 22, "\u2193", safe_button(joystick, 12))
-        draw_button(70, 320, 22, "\u2190", safe_button(joystick, 13))
-        draw_button(170, 320, 22, "\u2192", safe_button(joystick, 14))
+        draw_button(120, 270, 22, "\u2191", raw_input["buttons"]["dpad_up"])
+        draw_button(120, 370, 22, "\u2193", raw_input["buttons"]["dpad_down"])
+        draw_button(70, 320, 22, "\u2190", raw_input["buttons"]["dpad_left"])
+        draw_button(170, 320, 22, "\u2192", raw_input["buttons"]["dpad_right"])
 
-        draw_button(330, 250, 20, "Cr", safe_button(joystick, 4))
-        draw_button(350, 320, 20, "PS", safe_button(joystick, 5))
-        draw_button(370, 250, 20, "Op", safe_button(joystick, 6))
-        draw_button(350, 200, 24, "TP", safe_button(joystick, 15))
+        draw_button(330, 250, 20, "Cr", raw_input["buttons"]["create"])
+        draw_button(350, 320, 20, "PS", raw_input["buttons"]["ps"])
+        draw_button(370, 250, 20, "Op", raw_input["buttons"]["options"])
+        draw_button(350, 200, 24, "TP", raw_input["buttons"]["touchpad"])
 
         panel_x = 620
         panel_y = 120
-        draw_text("Buttons", panel_x, panel_y, PURPLE)
+        draw_text("Servo Control Output", panel_x, panel_y, PURPLE)
 
         y = panel_y + 35
-        for idx, name in BUTTON_NAMES.items():
-            state = safe_button(joystick, idx)
-            color = GREEN if state else GRAY
-            draw_text(f"{idx:>2}: {name:<10} = {state}", panel_x, y, color, SMALL_FONT)
-            y += 24
+        draw_text(f"Steering Angle: {servo_cmd['steering_angle_input']:+.2f}°", panel_x, y, YELLOW, SMALL_FONT)
+        y += 24
+        draw_text(f"PWM Value: {servo_cmd['steering_pwm_value_us']} µs", panel_x, y, GREEN, SMALL_FONT)
+        y += 48
 
-        y += 10
-        draw_text("Axes", panel_x, y, PURPLE)
+        draw_text("Buttons", panel_x, y, PURPLE)
         y += 35
 
-        for idx, name in AXIS_NAMES.items():
-            val = safe_axis(joystick, idx)
-            draw_text(f"{idx:>2}: {name:<13} = {val:+.3f}", panel_x, y, WHITE, SMALL_FONT)
-            y += 24
-
-        draw_text(f"4: L2 = {raw_l2:+.3f} -> {l2:.3f}", panel_x, y, WHITE, SMALL_FONT)
-        y += 24
-        draw_text(f"5: R2 = {raw_r2:+.3f} -> {r2:.3f}", panel_x, y, WHITE, SMALL_FONT)
+        for button_name, button_state in raw_input["buttons"].items():
+            color = GREEN if button_state else GRAY
+            draw_text(f"{button_name:<12} = {button_state}", panel_x, y, color, SMALL_FONT)
+            y += 22
+            if y > HEIGHT - 50:  # Stop if we run out of space
+                break
 
         pygame.display.flip()
         clock.tick(60)
