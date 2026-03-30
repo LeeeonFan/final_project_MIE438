@@ -5,18 +5,19 @@ PS5 controller → robot bridge.
 Reads PS5 controller input via ControllerManager and streams
 throttle/steering commands to the Pi over UDP (same format as teleop_client.py).
 
-Control mapping:
-  - Left Stick Y: throttle (forward/backward)
+Default control mapping:
+  - R1 (hold): motor on (throttle = 1.0)
   - Right Stick X: steering (left/right)
 
-Alternatively, set --triggers flag to use:
-  - R2: forward, L2: backward
-  - Right Stick X: steering
+Alternative throttle modes via --throttle flag:
+  --throttle r1        (default) R1 button = motor on/off
+  --throttle triggers  R2 forward, L2 backward
+  --throttle stick     Left stick Y forward/backward
 
 Usage:
   python controller_servo_example.py
   python controller_servo_example.py --pi-ip 192.168.1.50 --port 5006
-  python controller_servo_example.py --triggers
+  python controller_servo_example.py --throttle triggers
 """
 
 import argparse
@@ -52,8 +53,8 @@ def parse_args():
         help=f"Command send rate in Hz (default: {DEFAULT_SEND_HZ})"
     )
     parser.add_argument(
-        "--triggers", action="store_true",
-        help="Use R2/L2 triggers for throttle instead of left stick"
+        "--throttle", choices=["r1", "triggers", "stick"], default="r1",
+        help="Throttle source: r1 (default), triggers (R2/L2), stick (left stick Y)"
     )
     return parser.parse_args()
 
@@ -62,8 +63,14 @@ def main():
     args = parse_args()
     period = 1.0 / args.send_hz
 
+    throttle_mode_map = {
+        "r1": ControllerManager.THROTTLE_MODE_R1,
+        "triggers": ControllerManager.THROTTLE_MODE_TRIGGERS,
+        "stick": ControllerManager.THROTTLE_MODE_LEFT_STICK,
+    }
+
     print("Initializing ControllerManager...")
-    controller = ControllerManager(use_triggers_for_throttle=args.triggers)
+    controller = ControllerManager(throttle_mode=throttle_mode_map[args.throttle])
 
     print("Waiting for controller connection...")
     while not controller.is_connected():
@@ -73,8 +80,10 @@ def main():
 
     print(f"Controller connected: {controller.joystick.get_name()}")
     print(f"Sending to {args.pi_ip}:{args.port} at {args.send_hz} Hz")
-    print("\nControl mapping:")
-    if args.triggers:
+    print(f"\nControl mapping (throttle mode: {args.throttle}):")
+    if args.throttle == "r1":
+        print("  R1 (hold): motor on  |  R1 (release): motor off")
+    elif args.throttle == "triggers":
         print("  R2: forward throttle  |  L2: reverse throttle")
     else:
         print("  Left Stick Y: throttle (up=forward, down=backward)")
