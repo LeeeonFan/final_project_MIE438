@@ -1,54 +1,72 @@
-import RPi.GPIO as GPIO
+import lgpio
 import time
 
-# Pin assignments
-IN1, IN2, IN3, IN4 = 18, 19, 20, 21
-ENA, ENB = 12, 13
+GPIO_CHIP = 4  # Pi 5 (use 0 for Pi 4 or earlier)
+PWM_FREQUENCY = 1000  # Hz
 
-GPIO.setmode(GPIO.BCM)
-GPIO.setup([IN1, IN2, IN3, IN4, ENA, ENB], GPIO.OUT)
+# Pin assignments from config.py MOTOR_CONFIGS
+LEFT_IN1 = 17
+LEFT_IN2 = 22
+LEFT_PWM = 10
 
-# Create PWM instances
-pwm_a = GPIO.PWM(ENA, 1000)
-pwm_b = GPIO.PWM(ENB, 1000)
-pwm_a.start(0)
-pwm_b.start(0)
+RIGHT_IN1 = 23
+RIGHT_IN2 = 24
+RIGHT_PWM = 9
+
+h = lgpio.gpiochip_open(GPIO_CHIP)
+
+# Claim direction pins as outputs
+for pin in [LEFT_IN1, LEFT_IN2, RIGHT_IN1, RIGHT_IN2]:
+    lgpio.gpio_claim_output(h, pin)
+
 
 def motor_control(motor, direction, speed):
-    """Control motor A or B with direction and speed (0-100)."""
-    if motor == 'A':
-        if direction == 'forward':
-            GPIO.output(IN1, GPIO.HIGH)
-            GPIO.output(IN2, GPIO.LOW)
-        else:
-            GPIO.output(IN1, GPIO.LOW)
-            GPIO.output(IN2, GPIO.HIGH)
-        pwm_a.ChangeDutyCycle(speed)
+    """Control left or right motor with direction and speed (0-100 duty %)."""
+    if motor == 'left':
+        in1, in2, pwm_pin = LEFT_IN1, LEFT_IN2, LEFT_PWM
+    else:
+        in1, in2, pwm_pin = RIGHT_IN1, RIGHT_IN2, RIGHT_PWM
 
-    elif motor == 'B':
-        if direction == 'forward':
-            GPIO.output(IN3, GPIO.HIGH)
-            GPIO.output(IN4, GPIO.LOW)
-        else:
-            GPIO.output(IN3, GPIO.LOW)
-            GPIO.output(IN4, GPIO.HIGH)
-        pwm_b.ChangeDutyCycle(speed)
+    if direction == 'forward':
+        lgpio.gpio_write(h, in1, 1)
+        lgpio.gpio_write(h, in2, 0)
+    else:
+        lgpio.gpio_write(h, in1, 0)
+        lgpio.gpio_write(h, in2, 1)
+
+    lgpio.tx_pwm(h, pwm_pin, PWM_FREQUENCY, speed)
+
+
+def motor_stop(motor):
+    if motor == 'left':
+        in1, in2, pwm_pin = LEFT_IN1, LEFT_IN2, LEFT_PWM
+    else:
+        in1, in2, pwm_pin = RIGHT_IN1, RIGHT_IN2, RIGHT_PWM
+
+    lgpio.gpio_write(h, in1, 0)
+    lgpio.gpio_write(h, in2, 0)
+    lgpio.tx_pwm(h, pwm_pin, PWM_FREQUENCY, 0)
+
 
 try:
-    # Example usage
-    motor_control('A', 'forward', 75)   # Motor A forward at 75% speed
+    print("Left motor forward 75%")
+    motor_control('left', 'forward', 75)
     time.sleep(2)
 
-    motor_control('A', 'backward', 50)  # Motor A backward at 50% speed
+    print("Left motor backward 50%")
+    motor_control('left', 'backward', 50)
     time.sleep(2)
 
-    motor_control('B', 'forward', 75)   # Motor B forward at 75% speed
+    print("Right motor forward 75%")
+    motor_control('right', 'forward', 75)
     time.sleep(2)
 
-    motor_control('B', 'backward', 50)  # Motor B backward at 50% speed
+    print("Right motor backward 50%")
+    motor_control('right', 'backward', 50)
     time.sleep(2)
 
 finally:
-    pwm_a.stop()
-    pwm_b.stop()
-    GPIO.cleanup()
+    motor_stop('left')
+    motor_stop('right')
+    lgpio.gpiochip_close(h)
+    print("Cleanup done")
