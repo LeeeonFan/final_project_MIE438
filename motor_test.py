@@ -1,58 +1,54 @@
-"""
-test_hal_servo.py
-
-Servo-only test through the HAL layer.
-
-This script assumes your current HAL supports:
-    hal.apply({
-        "left_motor_pwm_value": ...,
-        "right_motor_pwm_value": ...,
-        "steering_pwm_value_us": ...,
-    })
-
-It keeps both motors at 0 and only moves the steering servo.
-"""
-
+import RPi.GPIO as GPIO
 import time
 
-from hal import HAL
-from config import SERVO_MIN_US, SERVO_CENTER_US, SERVO_MAX_US
+# Pin assignments
+IN1, IN2, IN3, IN4 = 18, 19, 20, 21
+ENA, ENB = 12, 13
 
-MOVE_DELAY_S = 1.5
+GPIO.setmode(GPIO.BCM)
+GPIO.setup([IN1, IN2, IN3, IN4, ENA, ENB], GPIO.OUT)
 
+# Create PWM instances
+pwm_a = GPIO.PWM(ENA, 1000)
+pwm_b = GPIO.PWM(ENB, 1000)
+pwm_a.start(0)
+pwm_b.start(0)
 
-def apply_servo(hal, pulse_us, label):
-    cmd = {
-        "left_motor_pwm_value": 0.0,
-        "right_motor_pwm_value": 0.0,
-        "steering_pwm_value_us": pulse_us,
-    }
-    print(f"\n[TEST] {label}")
-    print(f"[CMD] {cmd}")
-    hal.apply(cmd)
-    time.sleep(MOVE_DELAY_S)
+def motor_control(motor, direction, speed):
+    """Control motor A or B with direction and speed (0-100)."""
+    if motor == 'A':
+        if direction == 'forward':
+            GPIO.output(IN1, GPIO.HIGH)
+            GPIO.output(IN2, GPIO.LOW)
+        else:
+            GPIO.output(IN1, GPIO.LOW)
+            GPIO.output(IN2, GPIO.HIGH)
+        pwm_a.ChangeDutyCycle(speed)
 
+    elif motor == 'B':
+        if direction == 'forward':
+            GPIO.output(IN3, GPIO.HIGH)
+            GPIO.output(IN4, GPIO.LOW)
+        else:
+            GPIO.output(IN3, GPIO.LOW)
+            GPIO.output(IN4, GPIO.HIGH)
+        pwm_b.ChangeDutyCycle(speed)
 
-def main():
-    hal = HAL()
+try:
+    # Example usage
+    motor_control('A', 'forward', 75)   # Motor A forward at 75% speed
+    time.sleep(2)
 
-    try:
-        print("[START] HAL servo test starting...")
+    motor_control('A', 'backward', 50)  # Motor A backward at 50% speed
+    time.sleep(2)
 
-        apply_servo(hal, SERVO_CENTER_US, f"Center ({SERVO_CENTER_US} us)")
-        apply_servo(hal, SERVO_MIN_US, f"Min pulse ({SERVO_MIN_US} us)")
-        apply_servo(hal, SERVO_MAX_US, f"Max pulse ({SERVO_MAX_US} us)")
-        apply_servo(hal, SERVO_CENTER_US, f"Back to center ({SERVO_CENTER_US} us)")
+    motor_control('B', 'forward', 75)   # Motor B forward at 75% speed
+    time.sleep(2)
 
-        print("\n[DONE] Servo HAL test completed.")
+    motor_control('B', 'backward', 50)  # Motor B backward at 50% speed
+    time.sleep(2)
 
-    except KeyboardInterrupt:
-        print("\n[INTERRUPT] Stopping test...")
-
-    finally:
-        hal.cleanup()
-        print("[CLEANUP] HAL cleaned up.")
-
-
-if __name__ == "__main__":
-    main()
+finally:
+    pwm_a.stop()
+    pwm_b.stop()
+    GPIO.cleanup()
