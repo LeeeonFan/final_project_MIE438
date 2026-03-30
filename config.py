@@ -89,6 +89,6 @@ WHEEL_RADIUS_M = 0.015       # 15 mm
 # NETWORK (laptop -> Pi bridge)
 # =========================================================
 
-PI_IP = "172.20.10.2"       # set to your Pi's IP address
+PI_IP = "172.20.10.3"       # set to your Pi's IP address
 COMMAND_PORT = 5005
 COMMAND_TIMEOUT_S = 0.5       # seconds; Pi stops motors if no command received
