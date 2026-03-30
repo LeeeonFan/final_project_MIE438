@@ -1,62 +1,58 @@
 """
-test_servo_direct.py
+test_hal_servo.py
 
-Direct one-servo test using Adafruit ServoKit on Raspberry Pi + PCA9685.
+Servo-only test through the HAL layer.
 
-Requirements:
-    pip3 install adafruit-circuitpython-servokit
+This script assumes your current HAL supports:
+    hal.apply({
+        "left_motor_pwm_value": ...,
+        "right_motor_pwm_value": ...,
+        "steering_pwm_value_us": ...,
+    })
 
-Wiring:
-    - Servo signal -> PCA9685 channel 0
-    - PCA9685 SDA/SCL -> Pi I2C
-    - External 5V supply for servo power recommended
-    - Common ground between Pi, PCA9685, and servo supply
+It keeps both motors at 0 and only moves the steering servo.
 """
 
 import time
-from adafruit_servokit import ServoKit
 
-# PCA9685 / servo settings
-I2C_ADDRESS = 0x40
-CHANNELS = 16
-SERVO_CHANNEL = 0
-
-# Servo calibration
-SERVO_MIN_US = 1000
-SERVO_MAX_US = 2000
-SERVO_CENTER_ANGLE = 90
-SERVO_LEFT_ANGLE = 30
-SERVO_RIGHT_ANGLE = 150
-ACTUATION_RANGE = 180
+from hal import HAL
+from config import SERVO_MIN_US, SERVO_CENTER_US, SERVO_MAX_US
 
 MOVE_DELAY_S = 1.5
 
-# Create ServoKit for PCA9685
-kit = ServoKit(channels=CHANNELS, address=I2C_ADDRESS)
 
-# Configure the servo on the selected channel
-servo = kit.servo[SERVO_CHANNEL]
-servo.actuation_range = ACTUATION_RANGE
-servo.set_pulse_width_range(SERVO_MIN_US, SERVO_MAX_US)
-
-try:
-    print("Center")
-    servo.angle = SERVO_CENTER_ANGLE
+def apply_servo(hal, pulse_us, label):
+    cmd = {
+        "left_motor_pwm_value": 0.0,
+        "right_motor_pwm_value": 0.0,
+        "steering_pwm_value_us": pulse_us,
+    }
+    print(f"\n[TEST] {label}")
+    print(f"[CMD] {cmd}")
+    hal.apply(cmd)
     time.sleep(MOVE_DELAY_S)
 
-    print("Left")
-    servo.angle = SERVO_LEFT_ANGLE
-    time.sleep(MOVE_DELAY_S)
 
-    print("Right")
-    servo.angle = SERVO_RIGHT_ANGLE
-    time.sleep(MOVE_DELAY_S)
+def main():
+    hal = HAL()
 
-    print("Center")
-    servo.angle = SERVO_CENTER_ANGLE
-    time.sleep(MOVE_DELAY_S)
+    try:
+        print("[START] HAL servo test starting...")
 
-finally:
-    # Release the servo signal
-    servo.angle = None
-    print("Done")
+        apply_servo(hal, SERVO_CENTER_US, f"Center ({SERVO_CENTER_US} us)")
+        apply_servo(hal, SERVO_MIN_US, f"Min pulse ({SERVO_MIN_US} us)")
+        apply_servo(hal, SERVO_MAX_US, f"Max pulse ({SERVO_MAX_US} us)")
+        apply_servo(hal, SERVO_CENTER_US, f"Back to center ({SERVO_CENTER_US} us)")
+
+        print("\n[DONE] Servo HAL test completed.")
+
+    except KeyboardInterrupt:
+        print("\n[INTERRUPT] Stopping test...")
+
+    finally:
+        hal.cleanup()
+        print("[CLEANUP] HAL cleaned up.")
+
+
+if __name__ == "__main__":
+    main()
