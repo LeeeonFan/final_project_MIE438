@@ -119,12 +119,17 @@ def normalize_trigger(v):
 
 class ControllerManager:
     """
-    Manages PS5 controller input and converts to servo commands.
+    Manages PS5 controller input and converts to robot commands (throttle, steering).
+    
+    Similar to teleop_client.py but uses PS5 controller instead of keyboard.
+    - Right Stick X → steering angle
+    - Left Stick Y or triggers → throttle
     """
 
-    def __init__(self):
+    def __init__(self, use_triggers_for_throttle=False):
         self.joystick = None
         self.servo_controller = ServoController()
+        self.use_triggers_for_throttle = use_triggers_for_throttle
         self._init_joystick()
 
     def _init_joystick(self):
@@ -201,36 +206,52 @@ class ControllerManager:
             "buttons": buttons,
         }
 
-    def get_servo_commands(self):
+    def get_command_payload(self):
         """
-        Get servo commands based on controller input.
-
-        By default, right stick X-axis maps to steering angle.
+        Get robot command payload (throttle, steering) from controller.
+        
+        Mirrors the format used by teleop_client.py:
+        - steering: Right stick X-axis (-1.0 to 1.0)
+        - throttle: Left stick Y-axis (-1.0 to 1.0)
+          OR R2-L2 if use_triggers_for_throttle is True
 
         Returns
         -------
-        dict
-            Servo command with keys:
-            - steering_pwm_value_us: PWM pulse width in microseconds
-            - steering_angle_input: Input steering angle in degrees
+        dict or None
+            {
+                "throttle": float,           # -1.0 (reverse) to 1.0 (forward)
+                "steering": float,           # -1.0 (left) to 1.0 (right)
+                "steering_pwm_us": int,      # PWM microseconds (optional)
+                "raw_input": dict            # Full raw input for debugging
+            }
         """
         raw_input = self.get_raw_input()
 
         if raw_input is None:
             return None
 
-        # Map right stick X-axis to steering angle
-        # Assuming max steering angle maps to full stick deflection (-1 to 1)
-        # Get max steering angle from servo controller
-        max_angle = self.servo_controller.max_steering_angle
-        steering_angle = raw_input["right_x"] * max_angle
+        # Steering from right stick X
+        steering = raw_input["right_x"]  # Already in [-1, 1]
 
+        # Throttle from left stick Y (inverted: up = forward) or triggers
+        if self.use_triggers_for_throttle:
+            # R2 forward, L2 backward
+            throttle = raw_input["r2"] - raw_input["l2"]
+        else:
+            # Left stick Y (negative Y is up = forward)
+            throttle = -raw_input["left_y"]
+
+        # Convert steering to servo PWM
+        max_angle = self.servo_controller.max_steering_angle
+        steering_angle = steering * max_angle
         servo_cmd = {"steering_angle": steering_angle}
         servo_output = self.servo_controller.update(servo_cmd)
 
         return {
-            **servo_output,
-            "steering_angle_input": steering_angle,
+            "throttle": throttle,
+            "steering": steering,
+            "steering_pwm_us": servo_output["steering_pwm_value_us"],
+            "steering_angle": steering_angle,
             "raw_input": raw_input,
         }
 
@@ -249,8 +270,8 @@ def main():
                 controller_manager.reconnect()
 
         screen.fill(BG)
-        draw_text("PS5 Controller Visualizer + Servo Control", 30, 20, PURPLE)
-        draw_text("Connect a DualSense controller. Right stick controls servo.", 30, 55, GRAY)
+        draw_text("PS5 Controller → Robot Commands", 30, 20, PURPLE)
+        draw_text("Left Stick Y or Triggers: throttle  |  Right Stick X: steering", 30, 55, GRAY)
 
         if not controller_manager.is_connected():
             draw_text("No controller detected.", 30, 120, RED)
@@ -259,7 +280,7 @@ def main():
             continue
 
         raw_input = controller_manager.get_raw_input()
-        servo_cmd = controller_manager.get_servo_commands()
+        payload = controller_manager.get_command_payload()
 
         draw_text(f"Controller: {controller_manager.joystick.get_name()}", 30, 100, WHITE)
 
@@ -270,19 +291,17 @@ def main():
 
         l2 = raw_input["l2"]
         r2 = raw_input["r2"]
-        raw_l2 = raw_input["raw_l2"]
-        raw_r2 = raw_input["raw_r2"]
 
         l3 = raw_input["buttons"]["l3"]
         r3 = raw_input["buttons"]["r3"]
 
-        draw_stick(220, 300, 90, left_x, left_y, "Left Stick", pressed=bool(l3))
+        draw_stick(220, 300, 90, left_x, left_y, "Left Stick (Throttle)", pressed=bool(l3))
         draw_stick(460, 300, 90, right_x, right_y, "Right Stick (Steering)", pressed=bool(r3))
 
         draw_button(180, 170, 28, "L1", raw_input["buttons"]["l1"])
         draw_button(500, 170, 28, "R1", raw_input["buttons"]["r1"])
-        draw_trigger(120, 470, 50, 140, l2, "L2")
-        draw_trigger(490, 470, 50, 140, r2, "R2")
+        draw_trigger(120, 470, 50, 140, l2, "L2 (Back)")
+        draw_trigger(490, 470, 50, 140, r2, "R2 (Fwd)")
 
         draw_button(760, 270, 24, "\u25b3", raw_input["buttons"]["triangle"])
         draw_button(810, 320, 24, "\u25cb", raw_input["buttons"]["circle"])
@@ -301,23 +320,33 @@ def main():
 
         panel_x = 620
         panel_y = 120
-        draw_text("Servo Control Output", panel_x, panel_y, PURPLE)
+        draw_text("Command Payload", panel_x, panel_y, PURPLE)
 
         y = panel_y + 35
-        draw_text(f"Steering Angle: {servo_cmd['steering_angle_input']:+.2f}°", panel_x, y, YELLOW, SMALL_FONT)
+        draw_text(f"throttle:  {payload['throttle']:+.2f}", panel_x, y, YELLOW, SMALL_FONT)
         y += 24
-        draw_text(f"PWM Value: {servo_cmd['steering_pwm_value_us']} µs", panel_x, y, GREEN, SMALL_FONT)
-        y += 48
+        draw_text(f"steering:  {payload['steering']:+.2f}", panel_x, y, YELLOW, SMALL_FONT)
+        y += 24
+        draw_text(f"(steering angle: {payload['steering_angle']:+.1f}°)", panel_x, y, GRAY, SMALL_FONT)
+        y += 24
+        draw_text(f"PWM: {payload['steering_pwm_us']} µs", panel_x, y, GREEN, SMALL_FONT)
 
-        draw_text("Buttons", panel_x, y, PURPLE)
+        y += 48
+        draw_text("Raw Input", panel_x, y, PURPLE)
         y += 35
 
-        for button_name, button_state in raw_input["buttons"].items():
-            color = GREEN if button_state else GRAY
-            draw_text(f"{button_name:<12} = {button_state}", panel_x, y, color, SMALL_FONT)
+        axis_info = [
+            ("L: X", f"{left_x:+.2f}"),
+            ("L: Y", f"{left_y:+.2f}"),
+            ("R: X", f"{right_x:+.2f}"),
+            ("R: Y", f"{right_y:+.2f}"),
+            ("L2", f"{l2:.2f}"),
+            ("R2", f"{r2:.2f}"),
+        ]
+
+        for label, value in axis_info:
+            draw_text(f"{label}  {value}", panel_x, y, WHITE, SMALL_FONT)
             y += 22
-            if y > HEIGHT - 50:  # Stop if we run out of space
-                break
 
         pygame.display.flip()
         clock.tick(60)

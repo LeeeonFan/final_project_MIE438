@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
-Example: Using merged ControllerManager to read PS5 controller and get servo commands.
+Example: Using merged ControllerManager to read PS5 controller and get commands.
 
-This demonstrates how to use the ControllerManager class to:
-1. Read PS5 controller input
-2. Convert to servo PWM commands
-3. Use the commands to control servo hardware
+This mirrors the teleop_client.py pattern but uses PS5 controller input.
+Control mapping:
+  - Left Stick Y: throttle (forward/backward)
+  - Right Stick X: steering (left/right)
+  
+Alternatively, set use_triggers_for_throttle=True in ControllerManager:
+  - R2: forward
+  - L2: backward
+  - Right Stick X: steering
 """
 
 import sys
@@ -17,30 +22,39 @@ import time
 
 def main():
     print("Initializing ControllerManager...")
-    controller = ControllerManager()
+    controller = ControllerManager(use_triggers_for_throttle=False)
     
     print("Waiting for controller connection...")
     while not controller.is_connected():
         time.sleep(0.1)
     
     print(f"✓ Controller connected: {controller.joystick.get_name()}")
-    print("\nMove right stick left/right to control servo steering")
-    print("Press Ctrl+C to exit\n")
+    print("\nControl mapping:")
+    print("  Left Stick Y: throttle (up=forward, down=backward)")
+    print("  Right Stick X: steering (left=-1, right=+1)")
+    print("  Steering angle range: ±{:.0f}°".format(controller.servo_controller.max_steering_angle))
+    print("\nPress Ctrl+C to exit\n")
     
     try:
         while True:
-            # Get servo commands based on controller input
-            servo_cmd = controller.get_servo_commands()
+            # Get command payload (similar to teleop_client)
+            payload = controller.get_command_payload()
             
-            if servo_cmd:
-                steering_angle = servo_cmd["steering_angle_input"]
-                pwm_value = servo_cmd["steering_pwm_value_us"]
+            if payload:
+                throttle = payload["throttle"]
+                steering = payload["steering"]
+                pwm = payload["steering_pwm_us"]
+                angle = payload["steering_angle"]
                 
-                print(f"Steering: {steering_angle:+.1f}° → PWM: {pwm_value} µs", end='\r')
+                print(
+                    f"throttle={throttle:+.2f}  steering={steering:+.2f}  "
+                    f"angle={angle:+.1f}°  pwm={pwm}µs",
+                    end='\r'
+                )
                 
-                # TODO: Send pwm_value to actual servo hardware
+                # TODO: Send to robot
                 # Example:
-                # pwm_controller.set_pulse_width(pwm_value)
+                # socket.sendto(json.dumps(payload), (robot_ip, robot_port))
                 
             time.sleep(0.05)  # 20 Hz update rate
             
