@@ -3,8 +3,8 @@ import lgpio
 
 GPIO_CHIP = 4
 
-LEFT_IN1 = 17
-LEFT_IN2 = 22
+LEFT_IN1 = 18
+LEFT_IN2 = 19
 LEFT_EN = 12
 
 h = lgpio.gpiochip_open(GPIO_CHIP)
