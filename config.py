@@ -98,9 +98,12 @@ MOTOR_PWM_FREQUENCY = 1000
 # MOTOR and SERVO
 # =========================================================
 
+MOTOR_PWM_FREQUENCY = 1000
+
 SERVO_MIN_US = 1000
 SERVO_CENTER_US = 1500
 SERVO_MAX_US = 2000
+SERVO_ACTUATION_RANGE = 180
 
 MOTOR_CONFIGS = [
     {"name": "left_motor", "in1": 17, "in2": 22, "pwm": 10},
@@ -109,9 +112,6 @@ MOTOR_CONFIGS = [
 
 PCA9685_I2C_ADDRESS = 0x40
 PCA9685_PWM_FREQUENCY = 50
+PCA9685_CHANNELS = 16
 
-SERVO_CONFIGS = [
-    {"name": "servo1", "channel": 0},
-    {"name": "servo2", "channel": 1},
-    {"name": "servo3", "channel": 2},
-]
+SERVO1_CHANNEL = 0

@@ -1,54 +1,58 @@
-from hal import HAL
-import time
+"""
+test_hal_servo.py
 
-hal = HAL()
+Servo-only test through the HAL layer.
 
-def apply_outputs(
-    left_motor=0.0,
-    right_motor=0.0,
-    steering_us=1500,
-    servo2_us=1500,
-    servo3_us=1500,
-):
+This script assumes your current HAL supports:
     hal.apply({
-        "left_motor_pwm_value": left_motor,
-        "right_motor_pwm_value": right_motor,
-        "steering_pwm_value_us": steering_us,
-        "servo2_pwm_value_us": servo2_us,
-        "servo3_pwm_value_us": servo3_us,
+        "left_motor_pwm_value": ...,
+        "right_motor_pwm_value": ...,
+        "steering_pwm_value_us": ...,
     })
 
-try:
-    print("Centering all outputs...")
-    apply_outputs()
-    time.sleep(1.5)
+It keeps both motors at 0 and only moves the steering servo.
+"""
 
-    print("Testing steering channel...")
-    for pwm in [1500, 1400, 1600, 1300, 1700, 1500]:
-        print(f"steering_pwm_value_us = {pwm}")
-        apply_outputs(steering_us=pwm)
-        time.sleep(1.0)
+import time
 
-    print("Testing servo2 channel...")
-    for pwm in [1500, 1400, 1600, 1300, 1700, 1500]:
-        print(f"servo2_pwm_value_us = {pwm}")
-        apply_outputs(servo2_us=pwm)
-        time.sleep(1.0)
+from hal import HAL
+from config import SERVO_MIN_US, SERVO_CENTER_US, SERVO_MAX_US
 
-    print("Testing servo3 channel...")
-    for pwm in [1500, 1400, 1600, 1300, 1700, 1500]:
-        print(f"servo3_pwm_value_us = {pwm}")
-        apply_outputs(servo3_us=pwm)
-        time.sleep(1.0)
+MOVE_DELAY_S = 1.5
 
-    print("Testing motors gently...")
-    apply_outputs(left_motor=0.15, right_motor=0.15)
-    time.sleep(1.0)
 
-    print("Stopping motors...")
-    apply_outputs()
-    time.sleep(1.0)
+def apply_servo(hal, pulse_us, label):
+    cmd = {
+        "left_motor_pwm_value": 0.0,
+        "right_motor_pwm_value": 0.0,
+        "steering_pwm_value_us": pulse_us,
+    }
+    print(f"\n[TEST] {label}")
+    print(f"[CMD] {cmd}")
+    hal.apply(cmd)
+    time.sleep(MOVE_DELAY_S)
 
-finally:
-    print("Cleaning up...")
-    hal.cleanup()
+
+def main():
+    hal = HAL()
+
+    try:
+        print("[START] HAL servo test starting...")
+
+        apply_servo(hal, SERVO_CENTER_US, f"Center ({SERVO_CENTER_US} us)")
+        apply_servo(hal, SERVO_MIN_US, f"Min pulse ({SERVO_MIN_US} us)")
+        apply_servo(hal, SERVO_MAX_US, f"Max pulse ({SERVO_MAX_US} us)")
+        apply_servo(hal, SERVO_CENTER_US, f"Back to center ({SERVO_CENTER_US} us)")
+
+        print("\n[DONE] Servo HAL test completed.")
+
+    except KeyboardInterrupt:
+        print("\n[INTERRUPT] Stopping test...")
+
+    finally:
+        hal.cleanup()
+        print("[CLEANUP] HAL cleaned up.")
+
+
+if __name__ == "__main__":
+    main()
