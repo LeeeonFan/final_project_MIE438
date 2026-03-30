@@ -2,11 +2,11 @@
 hal.py
 
 Hardware Abstraction Layer with:
-- 2 DC motors through L298N + lgpio
+- 2 DC motors through L298N using direct GPIO on/off control
 - 1 standard servo through Adafruit ServoKit (PCA9685 over I2C)
 
-This version keeps the existing HAL.apply(cmd) interface compatible with
-the current pipeline.
+This version does NOT use lgpio.tx_pwm() for motors.
+The L298N enable pins are treated as normal GPIO outputs.
 
 Expected cmd dictionary:
     {
@@ -27,40 +27,51 @@ from utils import clamp
 GPIO_CHIP = 4  # Pi 5
 
 
-class DCMotorL298N:
-    def __init__(self, gpio_handle, name, in1_pin, in2_pin, pwm_pin, pwm_frequency):
+class DCMotorL298NDirect:
+    """
+    L298N motor using direct GPIO only:
+    - IN1/IN2 set direction
+    - EN is just HIGH or LOW
+
+    Any nonzero command becomes full-on in that direction.
+    """
+
+    def __init__(self, gpio_handle, name, in1_pin, in2_pin, en_pin, deadband=1e-3):
         self.gpio_handle = gpio_handle
         self.name = name
         self.in1_pin = in1_pin
         self.in2_pin = in2_pin
-        self.pwm_pin = pwm_pin
-        self.pwm_frequency = pwm_frequency
+        self.en_pin = en_pin
+        self.deadband = deadband
 
         lgpio.gpio_claim_output(self.gpio_handle, self.in1_pin)
         lgpio.gpio_claim_output(self.gpio_handle, self.in2_pin)
+        lgpio.gpio_claim_output(self.gpio_handle, self.en_pin)
 
         self.stop()
 
-    def apply(self, pwm_value: float):
-        pwm_value = clamp(pwm_value, -1.0, 1.0)
-        duty_percent = abs(pwm_value) * 100.0
+    def apply(self, value: float):
+        value = clamp(value, -1.0, 1.0)
 
-        if pwm_value > 0:
+        if value > self.deadband:
+            # forward
             lgpio.gpio_write(self.gpio_handle, self.in1_pin, 1)
             lgpio.gpio_write(self.gpio_handle, self.in2_pin, 0)
-        elif pwm_value < 0:
+            lgpio.gpio_write(self.gpio_handle, self.en_pin, 1)
+
+        elif value < -self.deadband:
+            # reverse
             lgpio.gpio_write(self.gpio_handle, self.in1_pin, 0)
             lgpio.gpio_write(self.gpio_handle, self.in2_pin, 1)
-        else:
-            lgpio.gpio_write(self.gpio_handle, self.in1_pin, 0)
-            lgpio.gpio_write(self.gpio_handle, self.in2_pin, 0)
+            lgpio.gpio_write(self.gpio_handle, self.en_pin, 1)
 
-        lgpio.tx_pwm(self.gpio_handle, self.pwm_pin, self.pwm_frequency, duty_percent)
+        else:
+            self.stop()
 
     def stop(self):
+        lgpio.gpio_write(self.gpio_handle, self.en_pin, 0)
         lgpio.gpio_write(self.gpio_handle, self.in1_pin, 0)
         lgpio.gpio_write(self.gpio_handle, self.in2_pin, 0)
-        lgpio.tx_pwm(self.gpio_handle, self.pwm_pin, self.pwm_frequency, 0.0)
 
 
 class ServoKitDriver:
@@ -81,9 +92,7 @@ class ServoKitDriver:
 class ServoKitServo:
     """
     One standard servo on one ServoKit channel.
-
     Upstream command is pulse width in microseconds.
-    Internally we calibrate pulse range and convert pulse width to angle.
     """
 
     def __init__(
@@ -132,11 +141,9 @@ class HAL:
     def __init__(self):
         self.gpio_handle = lgpio.gpiochip_open(GPIO_CHIP)
 
-        self.motor_pwm_frequency = getattr(config, "MOTOR_PWM_FREQUENCY", 1000)
-
-        self.servo_min_us = getattr(config, "SERVO_MIN_US", 1000)
+        self.servo_min_us = getattr(config, "SERVO_MIN_US", 500)
         self.servo_center_us = getattr(config, "SERVO_CENTER_US", 1500)
-        self.servo_max_us = getattr(config, "SERVO_MAX_US", 2000)
+        self.servo_max_us = getattr(config, "SERVO_MAX_US", 2500)
         self.servo_actuation_range = getattr(config, "SERVO_ACTUATION_RANGE", 180)
 
         self._build_motors()
@@ -146,38 +153,23 @@ class HAL:
 
     def _build_motors(self):
         motor_configs = getattr(config, "MOTOR_CONFIGS", None)
-        if motor_configs is None:
-            motor_configs = [
-                {
-                    "name": "left_motor",
-                    "in1": config.LEFT_MOTOR_IN1,
-                    "in2": config.LEFT_MOTOR_IN2,
-                    "pwm": config.LEFT_MOTOR_PWM,
-                },
-                {
-                    "name": "right_motor",
-                    "in1": config.RIGHT_MOTOR_IN1,
-                    "in2": config.RIGHT_MOTOR_IN2,
-                    "pwm": config.RIGHT_MOTOR_PWM,
-                },
-            ]
+        if motor_configs is None or len(motor_configs) < 2:
+            raise ValueError("config.MOTOR_CONFIGS must contain at least 2 motor configs")
 
-        self.left_motor = DCMotorL298N(
+        self.left_motor = DCMotorL298NDirect(
             gpio_handle=self.gpio_handle,
             name=motor_configs[0]["name"],
             in1_pin=motor_configs[0]["in1"],
             in2_pin=motor_configs[0]["in2"],
-            pwm_pin=motor_configs[0]["pwm"],
-            pwm_frequency=self.motor_pwm_frequency,
+            en_pin=motor_configs[0]["pwm"],   # using the old 'pwm' field as EN pin
         )
 
-        self.right_motor = DCMotorL298N(
+        self.right_motor = DCMotorL298NDirect(
             gpio_handle=self.gpio_handle,
             name=motor_configs[1]["name"],
             in1_pin=motor_configs[1]["in1"],
             in2_pin=motor_configs[1]["in2"],
-            pwm_pin=motor_configs[1]["pwm"],
-            pwm_frequency=self.motor_pwm_frequency,
+            en_pin=motor_configs[1]["pwm"],   # using the old 'pwm' field as EN pin
         )
 
     def _build_servo(self):
