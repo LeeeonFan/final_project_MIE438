@@ -92,3 +92,26 @@ WHEEL_RADIUS_M = 0.015       # 15 mm
 PI_IP = "172.20.10.3"       # set to your Pi's IP address
 COMMAND_PORT = 5006
 COMMAND_TIMEOUT_S = 0.5       # seconds; Pi stops motors if no command received
+MOTOR_PWM_FREQUENCY = 1000
+
+# =========================================================
+# MOTOR and SERVO
+# =========================================================
+
+SERVO_MIN_US = 1000
+SERVO_CENTER_US = 1500
+SERVO_MAX_US = 2000
+
+MOTOR_CONFIGS = [
+    {"name": "left_motor", "in1": 17, "in2": 22, "pwm": 10},
+    {"name": "right_motor", "in1": 23, "in2": 24, "pwm": 9},
+]
+
+PCA9685_I2C_ADDRESS = 0x40
+PCA9685_PWM_FREQUENCY = 50
+
+SERVO_CONFIGS = [
+    {"name": "servo1", "channel": 0},
+    {"name": "servo2", "channel": 1},
+    {"name": "servo3", "channel": 2},
+]
