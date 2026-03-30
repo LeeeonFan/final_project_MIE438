@@ -1,10 +1,26 @@
 """
+teleop_client.py
+
 Laptop-side WASD teleoperation client for the robot.
 
-This version is intended for the dual-source Pi receiver:
-- CV module keeps sending to COMMAND_PORT (for example 5005)
-- teleop sends to a separate teleop port (default 5006)
-- main_dual_source.py on the Pi selects which source is active
+Usage:
+    python teleop_client.py
+
+This client continuously sends UDP command packets to the Pi using the same
+packet format as run_cv_module.py:
+    {"throttle": float, "steering": float, "measured_v": float}
+
+Run only one sender at a time:
+- either run_cv_module.py
+- or teleop_client.py
+
+Controls:
+    W : increase throttle
+    S : decrease throttle
+    A : steer left
+    D : steer right
+    Space : reset throttle and steering to zero
+    Q : quit
 """
 
 from __future__ import annotations
@@ -17,8 +33,13 @@ import threading
 import time
 from dataclasses import dataclass
 
-DEFAULT_PI_IP = "172.20.10.3"
-DEFAULT_PORT = 5006
+try:
+    from config import PI_IP as DEFAULT_PI_IP
+    from config import COMMAND_PORT as DEFAULT_PORT
+except ImportError:
+    DEFAULT_PI_IP = "172.20.10.2"
+    DEFAULT_PORT = 5005
+
 DEFAULT_SEND_HZ = 20.0
 DEFAULT_STEP = 0.1
 DEFAULT_MEASURED_V = 0.0
@@ -52,7 +73,8 @@ class PiCommandSender:
         }
 
     def send_once(self) -> None:
-        self.sock.sendto(json.dumps(self._payload()).encode("utf-8"), (self.pi_ip, self.port))
+        payload = json.dumps(self._payload()).encode("utf-8")
+        self.sock.sendto(payload, (self.pi_ip, self.port))
 
     def loop(self) -> None:
         try:
@@ -60,7 +82,11 @@ class PiCommandSender:
                 self.send_once()
                 time.sleep(self.period)
         finally:
-            stop_payload = {"throttle": 0.0, "steering": 0.0, "measured_v": self.state.measured_v}
+            stop_payload = {
+                "throttle": 0.0,
+                "steering": 0.0,
+                "measured_v": self.state.measured_v,
+            }
             try:
                 self.sock.sendto(json.dumps(stop_payload).encode("utf-8"), (self.pi_ip, self.port))
             except OSError:
@@ -71,7 +97,7 @@ class PiCommandSender:
 def print_status(state: TeleopState) -> None:
     sys.stdout.write(
         "\r"
-        f"Teleop throttle={state.throttle:+.2f} steering={state.steering:+.2f} "
+        f"throttle={state.throttle:+.2f}  steering={state.steering:+.2f}  "
         "[W/S throttle, A/D steering, SPACE reset, Q quit]"
         " " * 8
     )
@@ -86,6 +112,7 @@ def run_windows_keyboard_loop(state: TeleopState, step: float) -> None:
         if not msvcrt.kbhit():
             time.sleep(0.02)
             continue
+
         key = msvcrt.getch()
         if key in (b"w", b"W"):
             state.throttle = clamp(state.throttle + step)
@@ -101,7 +128,9 @@ def run_windows_keyboard_loop(state: TeleopState, step: float) -> None:
         elif key in (b"q", b"Q"):
             state.running = False
             break
+
         print_status(state)
+
 
 
 def run_unix_keyboard_loop(state: TeleopState, step: float) -> None:
@@ -111,13 +140,16 @@ def run_unix_keyboard_loop(state: TeleopState, step: float) -> None:
 
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
+
     try:
         tty.setcbreak(fd)
         print_status(state)
+
         while state.running:
             ready, _, _ = select.select([sys.stdin], [], [], 0.05)
             if not ready:
                 continue
+
             key = sys.stdin.read(1)
             if key in ("w", "W"):
                 state.throttle = clamp(state.throttle + step)
@@ -133,31 +165,43 @@ def run_unix_keyboard_loop(state: TeleopState, step: float) -> None:
             elif key in ("q", "Q"):
                 state.running = False
                 break
+
             print_status(state)
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         print()
 
 
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Laptop-side WASD teleop client for dual-source Pi receiver")
-    parser.add_argument("--pi-ip", default=DEFAULT_PI_IP, help="Pi 5 IP address")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="UDP teleop command port used by main_dual_source.py")
+    parser = argparse.ArgumentParser(description="Laptop-side WASD teleop client for Pi robot")
+    parser.add_argument("--pi-ip", default=DEFAULT_PI_IP, help="Pi IP address")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="UDP command port used by main.py")
     parser.add_argument("--send-hz", type=float, default=DEFAULT_SEND_HZ, help="How fast to stream commands")
     parser.add_argument("--step", type=float, default=DEFAULT_STEP, help="Increment per key press")
     parser.add_argument("--measured-v", type=float, default=DEFAULT_MEASURED_V, help="Value placed in measured_v field")
     return parser.parse_args()
 
 
+
 def main() -> None:
     args = parse_args()
+
     state = TeleopState(measured_v=args.measured_v)
-    sender = PiCommandSender(args.pi_ip, args.port, args.send_hz, state)
+    sender = PiCommandSender(
+        pi_ip=args.pi_ip,
+        port=args.port,
+        send_hz=args.send_hz,
+        state=state,
+    )
+
     sender_thread = threading.Thread(target=sender.loop, daemon=True)
     sender_thread.start()
 
-    print(f"Sending teleop packets to Pi at {args.pi_ip}:{args.port}")
-    print("Run main_dual_source.py on the Pi. Use Pi terminal keys to switch active source.")
+    print(f"Sending teleop packets to {args.pi_ip}:{args.port}")
+    print("Run main.py on the Pi. Run this file on your laptop.")
+    print("Use only one sender at a time: CV or teleop.")
+    print("Focus this terminal window, then use WASD to drive.")
 
     try:
         if sys.platform.startswith("win"):
