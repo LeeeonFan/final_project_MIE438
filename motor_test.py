@@ -1,54 +1,84 @@
-import RPi.GPIO as GPIO
+"""
+test_hal_motors.py
+
+Motor-only test through the HAL layer.
+
+This script assumes:
+- HAL drives motors through direct GPIO enable pins (no tx_pwm)
+- HAL still accepts:
+    "left_motor_pwm_value"
+    "right_motor_pwm_value"
+    "steering_pwm_value_us"
+
+Tests:
+1. Left motor forward
+2. Stop
+3. Left motor reverse
+4. Stop
+5. Right motor forward
+6. Stop
+7. Right motor reverse
+8. Stop
+9. Both motors forward
+10. Stop
+11. Both motors reverse
+12. Stop
+"""
+
 import time
 
-# Pin assignments
-IN1, IN2, IN3, IN4 = 18, 19, 20, 21
-ENA, ENB = 12, 13
+from hal import HAL
+from config import SERVO_CENTER_US
 
-GPIO.setmode(GPIO.BCM)
-GPIO.setup([IN1, IN2, IN3, IN4, ENA, ENB], GPIO.OUT)
+TEST_DURATION_S = 2.0
+STOP_DURATION_S = 1.0
 
-# Create PWM instances
-pwm_a = GPIO.PWM(ENA, 1000)
-pwm_b = GPIO.PWM(ENB, 1000)
-pwm_a.start(0)
-pwm_b.start(0)
 
-def motor_control(motor, direction, speed):
-    """Control motor A or B with direction and speed (0-100)."""
-    if motor == 'A':
-        if direction == 'forward':
-            GPIO.output(IN1, GPIO.HIGH)
-            GPIO.output(IN2, GPIO.LOW)
-        else:
-            GPIO.output(IN1, GPIO.LOW)
-            GPIO.output(IN2, GPIO.HIGH)
-        pwm_a.ChangeDutyCycle(speed)
+def apply_cmd(hal, left, right, label, duration_s):
+    cmd = {
+        "left_motor_pwm_value": left,
+        "right_motor_pwm_value": right,
+        "steering_pwm_value_us": SERVO_CENTER_US,
+    }
+    print(f"\n[TEST] {label}")
+    print(f"[CMD] {cmd}")
+    hal.apply(cmd)
+    time.sleep(duration_s)
 
-    elif motor == 'B':
-        if direction == 'forward':
-            GPIO.output(IN3, GPIO.HIGH)
-            GPIO.output(IN4, GPIO.LOW)
-        else:
-            GPIO.output(IN3, GPIO.LOW)
-            GPIO.output(IN4, GPIO.HIGH)
-        pwm_b.ChangeDutyCycle(speed)
 
-try:
-    # Example usage
-    motor_control('A', 'forward', 75)   # Motor A forward at 75% speed
-    time.sleep(2)
+def main():
+    hal = HAL()
 
-    motor_control('A', 'backward', 50)  # Motor A backward at 50% speed
-    time.sleep(2)
+    try:
+        print("[START] HAL motor test starting...")
 
-    motor_control('B', 'forward', 75)   # Motor B forward at 75% speed
-    time.sleep(2)
+        apply_cmd(hal,  1.0,  0.0, "Left motor forward",  TEST_DURATION_S)
+        apply_cmd(hal,  0.0,  0.0, "Stop",                STOP_DURATION_S)
 
-    motor_control('B', 'backward', 50)  # Motor B backward at 50% speed
-    time.sleep(2)
+        apply_cmd(hal, -1.0,  0.0, "Left motor reverse",  TEST_DURATION_S)
+        apply_cmd(hal,  0.0,  0.0, "Stop",                STOP_DURATION_S)
 
-finally:
-    pwm_a.stop()
-    pwm_b.stop()
-    GPIO.cleanup()
+        apply_cmd(hal,  0.0,  1.0, "Right motor forward", TEST_DURATION_S)
+        apply_cmd(hal,  0.0,  0.0, "Stop",                STOP_DURATION_S)
+
+        apply_cmd(hal,  0.0, -1.0, "Right motor reverse", TEST_DURATION_S)
+        apply_cmd(hal,  0.0,  0.0, "Stop",                STOP_DURATION_S)
+
+        apply_cmd(hal,  1.0,  1.0, "Both motors forward", TEST_DURATION_S)
+        apply_cmd(hal,  0.0,  0.0, "Stop",                STOP_DURATION_S)
+
+        apply_cmd(hal, -1.0, -1.0, "Both motors reverse", TEST_DURATION_S)
+        apply_cmd(hal,  0.0,  0.0, "Final stop",          STOP_DURATION_S)
+
+        print("\n[DONE] HAL motor test completed.")
+
+    except KeyboardInterrupt:
+        print("\n[INTERRUPT] Stopping test...")
+
+    finally:
+        hal.cleanup()
+        print("[CLEANUP] HAL cleaned up.")
+
+
+if __name__ == "__main__":
+    main()
