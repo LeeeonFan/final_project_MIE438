@@ -106,8 +106,8 @@ SERVO_MAX_US = 2500
 SERVO_ACTUATION_RANGE = 180
 
 MOTOR_CONFIGS = [
-    {"name": "left_motor", "in1": 17, "in2": 22, "pwm": 10},
-    {"name": "right_motor", "in1": 23, "in2": 24, "pwm": 9},
+    {"name": "left_motor", "in1": 18, "in2": 19, "pwm": 12},
+    {"name": "right_motor", "in1": 20, "in2": 21, "pwm": 13},
 ]
 
 PCA9685_I2C_ADDRESS = 0x40

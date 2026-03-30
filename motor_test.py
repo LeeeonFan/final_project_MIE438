@@ -1,72 +1,84 @@
-import lgpio
+"""
+test_hal_motors.py
+
+Motor-only test through the HAL layer.
+
+This script assumes:
+- HAL drives motors through direct GPIO enable pins (no tx_pwm)
+- HAL still accepts:
+    "left_motor_pwm_value"
+    "right_motor_pwm_value"
+    "steering_pwm_value_us"
+
+Tests:
+1. Left motor forward
+2. Stop
+3. Left motor reverse
+4. Stop
+5. Right motor forward
+6. Stop
+7. Right motor reverse
+8. Stop
+9. Both motors forward
+10. Stop
+11. Both motors reverse
+12. Stop
+"""
+
 import time
 
-GPIO_CHIP = 4  # Pi 5 (use 0 for Pi 4 or earlier)
-PWM_FREQUENCY = 1000  # Hz
+from hal import HAL
+from config import SERVO_CENTER_US
 
-# Pin assignments from config.py MOTOR_CONFIGS
-LEFT_IN1 = 17
-LEFT_IN2 = 22
-LEFT_PWM = 10
-
-RIGHT_IN1 = 23
-RIGHT_IN2 = 24
-RIGHT_PWM = 9
-
-h = lgpio.gpiochip_open(GPIO_CHIP)
-
-# Claim direction pins as outputs
-for pin in [LEFT_IN1, LEFT_IN2, RIGHT_IN1, RIGHT_IN2]:
-    lgpio.gpio_claim_output(h, pin)
+TEST_DURATION_S = 2.0
+STOP_DURATION_S = 1.0
 
 
-def motor_control(motor, direction, speed):
-    """Control left or right motor with direction and speed (0-100 duty %)."""
-    if motor == 'left':
-        in1, in2, pwm_pin = LEFT_IN1, LEFT_IN2, LEFT_PWM
-    else:
-        in1, in2, pwm_pin = RIGHT_IN1, RIGHT_IN2, RIGHT_PWM
-
-    if direction == 'forward':
-        lgpio.gpio_write(h, in1, 1)
-        lgpio.gpio_write(h, in2, 0)
-    else:
-        lgpio.gpio_write(h, in1, 0)
-        lgpio.gpio_write(h, in2, 1)
-
-    lgpio.tx_pwm(h, pwm_pin, PWM_FREQUENCY, speed)
+def apply_cmd(hal, left, right, label, duration_s):
+    cmd = {
+        "left_motor_pwm_value": left,
+        "right_motor_pwm_value": right,
+        "steering_pwm_value_us": SERVO_CENTER_US,
+    }
+    print(f"\n[TEST] {label}")
+    print(f"[CMD] {cmd}")
+    hal.apply(cmd)
+    time.sleep(duration_s)
 
 
-def motor_stop(motor):
-    if motor == 'left':
-        in1, in2, pwm_pin = LEFT_IN1, LEFT_IN2, LEFT_PWM
-    else:
-        in1, in2, pwm_pin = RIGHT_IN1, RIGHT_IN2, RIGHT_PWM
+def main():
+    hal = HAL()
 
-    lgpio.gpio_write(h, in1, 0)
-    lgpio.gpio_write(h, in2, 0)
-    lgpio.tx_pwm(h, pwm_pin, PWM_FREQUENCY, 0)
+    try:
+        print("[START] HAL motor test starting...")
+
+        apply_cmd(hal,  1.0,  0.0, "Left motor forward",  TEST_DURATION_S)
+        apply_cmd(hal,  0.0,  0.0, "Stop",                STOP_DURATION_S)
+
+        apply_cmd(hal, -1.0,  0.0, "Left motor reverse",  TEST_DURATION_S)
+        apply_cmd(hal,  0.0,  0.0, "Stop",                STOP_DURATION_S)
+
+        apply_cmd(hal,  0.0,  1.0, "Right motor forward", TEST_DURATION_S)
+        apply_cmd(hal,  0.0,  0.0, "Stop",                STOP_DURATION_S)
+
+        apply_cmd(hal,  0.0, -1.0, "Right motor reverse", TEST_DURATION_S)
+        apply_cmd(hal,  0.0,  0.0, "Stop",                STOP_DURATION_S)
+
+        apply_cmd(hal,  1.0,  1.0, "Both motors forward", TEST_DURATION_S)
+        apply_cmd(hal,  0.0,  0.0, "Stop",                STOP_DURATION_S)
+
+        apply_cmd(hal, -1.0, -1.0, "Both motors reverse", TEST_DURATION_S)
+        apply_cmd(hal,  0.0,  0.0, "Final stop",          STOP_DURATION_S)
+
+        print("\n[DONE] HAL motor test completed.")
+
+    except KeyboardInterrupt:
+        print("\n[INTERRUPT] Stopping test...")
+
+    finally:
+        hal.cleanup()
+        print("[CLEANUP] HAL cleaned up.")
 
 
-try:
-    print("Left motor forward 75%")
-    motor_control('left', 'forward', 75)
-    time.sleep(2)
-
-    print("Left motor backward 50%")
-    motor_control('left', 'backward', 50)
-    time.sleep(2)
-
-    print("Right motor forward 75%")
-    motor_control('right', 'forward', 75)
-    time.sleep(2)
-
-    print("Right motor backward 50%")
-    motor_control('right', 'backward', 50)
-    time.sleep(2)
-
-finally:
-    motor_stop('left')
-    motor_stop('right')
-    lgpio.gpiochip_close(h)
-    print("Cleanup done")
+if __name__ == "__main__":
+    main()
