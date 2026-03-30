@@ -123,13 +123,18 @@ class ControllerManager:
     
     Similar to teleop_client.py but uses PS5 controller instead of keyboard.
     - Right Stick X → steering angle
-    - Left Stick Y or triggers → throttle
+    - R1 (held) → throttle (motor on/off)
+    - Left Stick Y or triggers → throttle (legacy modes)
     """
 
-    def __init__(self, use_triggers_for_throttle=False):
+    THROTTLE_MODE_R1 = "r1"
+    THROTTLE_MODE_LEFT_STICK = "left_stick"
+    THROTTLE_MODE_TRIGGERS = "triggers"
+
+    def __init__(self, throttle_mode="r1"):
         self.joystick = None
         self.servo_controller = ServoController()
-        self.use_triggers_for_throttle = use_triggers_for_throttle
+        self.throttle_mode = throttle_mode
         self._init_joystick()
 
     def _init_joystick(self):
@@ -210,10 +215,12 @@ class ControllerManager:
         """
         Get robot command payload (throttle, steering) from controller.
         
-        Mirrors the format used by teleop_client.py:
-        - steering: Right stick X-axis (-1.0 to 1.0)
-        - throttle: Left stick Y-axis (-1.0 to 1.0)
-          OR R2-L2 if use_triggers_for_throttle is True
+        Throttle source depends on throttle_mode:
+        - "r1": R1 held = 1.0 forward, released = 0.0
+        - "left_stick": Left stick Y (-1.0 to 1.0)
+        - "triggers": R2 forward, L2 backward
+
+        Steering always comes from right stick X (-1.0 to 1.0).
 
         Returns
         -------
@@ -221,7 +228,7 @@ class ControllerManager:
             {
                 "throttle": float,           # -1.0 (reverse) to 1.0 (forward)
                 "steering": float,           # -1.0 (left) to 1.0 (right)
-                "steering_pwm_us": int,      # PWM microseconds (optional)
+                "steering_pwm_us": int,      # PWM microseconds
                 "raw_input": dict            # Full raw input for debugging
             }
         """
@@ -230,18 +237,15 @@ class ControllerManager:
         if raw_input is None:
             return None
 
-        # Steering from right stick X
-        steering = raw_input["right_x"]  # Already in [-1, 1]
+        steering = raw_input["right_x"]
 
-        # Throttle from left stick Y (inverted: up = forward) or triggers
-        if self.use_triggers_for_throttle:
-            # R2 forward, L2 backward
+        if self.throttle_mode == self.THROTTLE_MODE_R1:
+            throttle = 1.0 if raw_input["buttons"]["r1"] else 0.0
+        elif self.throttle_mode == self.THROTTLE_MODE_TRIGGERS:
             throttle = raw_input["r2"] - raw_input["l2"]
         else:
-            # Left stick Y (negative Y is up = forward)
             throttle = -raw_input["left_y"]
 
-        # Convert steering to servo PWM
         max_angle = self.servo_controller.max_steering_angle
         steering_angle = steering * max_angle
         servo_cmd = {"steering_angle": steering_angle}
@@ -271,7 +275,7 @@ def main():
 
         screen.fill(BG)
         draw_text("PS5 Controller → Robot Commands", 30, 20, PURPLE)
-        draw_text("Left Stick Y or Triggers: throttle  |  Right Stick X: steering", 30, 55, GRAY)
+        draw_text("R1: motor on  |  Right Stick X: steering", 30, 55, GRAY)
 
         if not controller_manager.is_connected():
             draw_text("No controller detected.", 30, 120, RED)
@@ -299,7 +303,7 @@ def main():
         draw_stick(460, 300, 90, right_x, right_y, "Right Stick (Steering)", pressed=bool(r3))
 
         draw_button(180, 170, 28, "L1", raw_input["buttons"]["l1"])
-        draw_button(500, 170, 28, "R1", raw_input["buttons"]["r1"])
+        draw_button(500, 170, 28, "R1\nGo", raw_input["buttons"]["r1"])
         draw_trigger(120, 470, 50, 140, l2, "L2 (Back)")
         draw_trigger(490, 470, 50, 140, r2, "R2 (Fwd)")
 
