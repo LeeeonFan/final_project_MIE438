@@ -5,7 +5,7 @@ GPIO_CHIP = 4
 
 LEFT_IN1 = 17
 LEFT_IN2 = 22
-LEFT_EN = 10
+LEFT_EN = 12
 
 h = lgpio.gpiochip_open(GPIO_CHIP)
 
