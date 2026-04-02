@@ -44,10 +44,10 @@ class WaypointController:
     def __init__(
         self,
         goal_radius_m: float = 0.03,
-        heading_threshold_rad: float = math.radians(30),
-        turn_throttle: float = 0.3,
+        heading_threshold_rad: float = math.radians(15),
+        turn_throttle: float = 0.4,
         drive_throttle: float = 1.0,
-        k_steering: float = 0.8,
+        k_steering: float = 1.5,
         max_steering: float = 1.0,
     ):
         self.goal_radius_m = goal_radius_m
