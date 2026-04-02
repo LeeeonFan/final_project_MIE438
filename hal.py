@@ -198,7 +198,7 @@ class HAL:
         right_motor_pwm_value = cmd.get("right_motor_pwm_value", 0.0)
         steering_pwm_value_us = cmd.get("steering_pwm_value_us", self.servo_center_us)
 
-        self.left_motor.apply(left_motor_pwm_value)
+        self.left_motor.apply(-left_motor_pwm_value)  # wiring is reversed
         self.right_motor.apply(right_motor_pwm_value)
         self.steering_servo.apply_pulse_us(steering_pwm_value_us)
 
