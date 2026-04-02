@@ -179,12 +179,14 @@ def main() -> None:
                 )
                 cv2.imshow(WINDOW_BOARD, board_vis)
 
-            # Send command + measured velocity to Pi over UDP
+            # Send command to Pi over UDP
+            # measured_v=0 because motors are binary on/off — motor PID is a pass-through.
+            # Speed control is handled by WaypointController using CV feedback directly.
             if control_cmd is not None and not control_cmd.reached:
                 packet = {
                     "throttle": control_cmd.throttle,
                     "steering": control_cmd.steering,
-                    "measured_v": state.v,
+                    "measured_v": 0.0,
                 }
             else:
                 packet = {"throttle": 0.0, "steering": 0.0, "measured_v": 0.0}
