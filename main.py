@@ -1,11 +1,17 @@
 """
 Top-level control loop for the robot framework.
 
-Receives commands from the laptop CV module over UDP and drives the
+Receives commands from the laptop teleop/CV module over UDP and drives the
 full control pipeline: MotionManager -> MotorController -> ServoController -> HAL.
 
 Pipeline:
-    UDP recv {throttle, steering, measured_v}
+    UDP recv {
+        throttle,
+        steering,
+        measured_v,
+        manipulator_servo1_pwm_value_us,
+        manipulator_servo2_pwm_value_us
+    }
         -> MotionManager
         -> MotorController (PID with camera-based velocity feedback)
         -> ServoController
@@ -25,7 +31,13 @@ from hal import HAL
 
 # Shared state: updated each time a UDP packet arrives.
 # On timeout, reset to zeros so the robot stops (watchdog).
-_latest_packet = {"throttle": 0.0, "steering": 0.0, "measured_v": 0.0}
+_latest_packet = {
+    "throttle": 0.0,
+    "steering": 0.0,
+    "measured_v": 0.0,
+    "manipulator_servo1_pwm_value_us": 1500,
+    "manipulator_servo2_pwm_value_us": 1500,
+}
 
 # Debug print throttling
 DEBUG_PRINT_INTERVAL_S = 0.2
@@ -55,22 +67,42 @@ def receive_packet(sock):
             f"from={addr[0]}:{addr[1]} | "
             f"throttle={_latest_packet.get('throttle', 0.0):.3f}, "
             f"steering={_latest_packet.get('steering', 0.0):.3f}, "
-            f"measured_v={_latest_packet.get('measured_v', 0.0):.3f}"
+            f"measured_v={_latest_packet.get('measured_v', 0.0):.3f}, "
+            f"manipulator_servo1_pwm_value_us={_latest_packet.get('manipulator_servo1_pwm_value_us', 1500)}, "
+            f"manipulator_servo2_pwm_value_us={_latest_packet.get('manipulator_servo2_pwm_value_us', 1500)}"
         )
         return True
 
     except socket.timeout:
-        _latest_packet = {"throttle": 0.0, "steering": 0.0, "measured_v": 0.0}
+        _latest_packet = {
+            "throttle": 0.0,
+            "steering": 0.0,
+            "measured_v": 0.0,
+            "manipulator_servo1_pwm_value_us": 1500,
+            "manipulator_servo2_pwm_value_us": 1500,
+        }
         return False
 
     except json.JSONDecodeError as e:
         print(f"[RX ERROR] Invalid JSON packet: {e}")
-        _latest_packet = {"throttle": 0.0, "steering": 0.0, "measured_v": 0.0}
+        _latest_packet = {
+            "throttle": 0.0,
+            "steering": 0.0,
+            "measured_v": 0.0,
+            "manipulator_servo1_pwm_value_us": 1500,
+            "manipulator_servo2_pwm_value_us": 1500,
+        }
         return False
 
     except Exception as e:
         print(f"[RX ERROR] Unexpected receive error: {e}")
-        _latest_packet = {"throttle": 0.0, "steering": 0.0, "measured_v": 0.0}
+        _latest_packet = {
+            "throttle": 0.0,
+            "steering": 0.0,
+            "measured_v": 0.0,
+            "manipulator_servo1_pwm_value_us": 1500,
+            "manipulator_servo2_pwm_value_us": 1500,
+        }
         return False
 
 
@@ -95,6 +127,14 @@ def get_motor_feedback():
     return {
         "left_shaft_speed": shaft_speed,
         "right_shaft_speed": shaft_speed,
+    }
+
+
+def get_manipulator_servo_commands():
+    """Get manipulator servo pulse-width commands directly from latest packet."""
+    return {
+        "manipulator_servo1_pwm_value_us": _latest_packet.get("manipulator_servo1_pwm_value_us", 1500),
+        "manipulator_servo2_pwm_value_us": _latest_packet.get("manipulator_servo2_pwm_value_us", 1500),
     }
 
 
@@ -127,7 +167,7 @@ def main():
                 print("[WATCHDOG] No command received, motors stopped.")
                 continue
 
-            # 2. Read command
+            # 2. Read drive command
             cmd = get_command()
             debug_print(
                 "[CMD] "
@@ -153,7 +193,7 @@ def main():
                 f"right_shaft_speed={motor_feedback['right_shaft_speed']:.3f}"
             )
 
-            # 5. Motor controller: target shaft speed -> normalized PWM
+            # 5. Motor controller: target shaft speed -> normalized motor command
             motor_target = motor_controller.update(
                 cmd={
                     "left_shaft_speed": motion_target["left_shaft_speed"],
@@ -168,7 +208,7 @@ def main():
                 f"right_motor_pwm_value={motor_target['right_motor_pwm_value']:.3f}"
             )
 
-            # 6. Servo controller: steering angle -> servo pulse width
+            # 6. Steering servo controller: steering angle -> steering servo pulse width
             servo_target = servo_controller.update(
                 cmd={
                     "steering_angle": motion_target["steering_angle"]
@@ -179,24 +219,36 @@ def main():
                 f"steering_pwm_value_us={servo_target['steering_pwm_value_us']}"
             )
 
-            # 7. Combine controller outputs for HAL
+            # 7. Read manipulator servo commands directly from packet
+            manipulator_servo_target = get_manipulator_servo_commands()
+            debug_print(
+                "[MANIPULATOR SERVO TARGET] "
+                f"manipulator_servo1_pwm_value_us={manipulator_servo_target['manipulator_servo1_pwm_value_us']}, "
+                f"manipulator_servo2_pwm_value_us={manipulator_servo_target['manipulator_servo2_pwm_value_us']}"
+            )
+
+            # 8. Combine controller outputs for HAL
             hal_cmd = {
                 "left_motor_pwm_value": motor_target["left_motor_pwm_value"],
                 "right_motor_pwm_value": motor_target["right_motor_pwm_value"],
                 "steering_pwm_value_us": servo_target["steering_pwm_value_us"],
+                "manipulator_servo1_pwm_value_us": manipulator_servo_target["manipulator_servo1_pwm_value_us"],
+                "manipulator_servo2_pwm_value_us": manipulator_servo_target["manipulator_servo2_pwm_value_us"],
             }
 
             debug_print(
                 "[HAL CMD] "
                 f"left_motor_pwm_value={hal_cmd['left_motor_pwm_value']:.3f}, "
                 f"right_motor_pwm_value={hal_cmd['right_motor_pwm_value']:.3f}, "
-                f"steering_pwm_value_us={hal_cmd['steering_pwm_value_us']}"
+                f"steering_pwm_value_us={hal_cmd['steering_pwm_value_us']}, "
+                f"manipulator_servo1_pwm_value_us={hal_cmd['manipulator_servo1_pwm_value_us']}, "
+                f"manipulator_servo2_pwm_value_us={hal_cmd['manipulator_servo2_pwm_value_us']}"
             )
 
-            # 8. Send to hardware
+            # 9. Send to hardware
             hal.apply(hal_cmd)
 
-            # 9. Maintain loop rate
+            # 10. Maintain loop rate
             elapsed = time.time() - loop_start
             sleep_time = period - elapsed
             if sleep_time > 0:

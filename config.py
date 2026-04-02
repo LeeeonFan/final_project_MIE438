@@ -114,4 +114,25 @@ PCA9685_I2C_ADDRESS = 0x40
 PCA9685_PWM_FREQUENCY = 50
 PCA9685_CHANNELS = 16
 
+# Existing steering servo
 SERVO1_CHANNEL = 0
+
+# New manipulator servos
+SERVO2_CHANNEL = 1
+SERVO3_CHANNEL = 2
+
+# Steering servo calibration
+SERVO1_MIN_US = 100
+SERVO1_CENTER_US = 1500
+SERVO1_MAX_US = 2900
+
+# Manipulator servo 1 calibration
+SERVO2_MIN_US = 100
+SERVO2_CENTER_US = 1500
+SERVO2_MAX_US = 2900
+
+# Manipulator servo 2 calibration
+SERVO3_MIN_US = 100
+SERVO3_CENTER_US = 1500
+SERVO3_MAX_US = 2900
+

@@ -3,7 +3,7 @@ hal.py
 
 Hardware Abstraction Layer with:
 - 2 DC motors through L298N using direct GPIO on/off control
-- 1 standard servo through Adafruit ServoKit (PCA9685 over I2C)
+- 3 standard servos through Adafruit ServoKit (PCA9685 over I2C)
 
 This version does NOT use lgpio.tx_pwm() for motors.
 The L298N enable pins are treated as normal GPIO outputs.
@@ -13,6 +13,8 @@ Expected cmd dictionary:
         "left_motor_pwm_value": float in [-1, 1],
         "right_motor_pwm_value": float in [-1, 1],
         "steering_pwm_value_us": int,
+        "manipulator_servo1_pwm_value_us": int,
+        "manipulator_servo2_pwm_value_us": int,
     }
 """
 
@@ -57,14 +59,12 @@ class DCMotorL298NDirect:
             # forward
             lgpio.gpio_write(self.gpio_handle, self.in1_pin, 1)
             lgpio.gpio_write(self.gpio_handle, self.in2_pin, 0)
-            lgpio.gpio_write(self.gpio_handle, self.en_pin, -1) # testing param
-
+            lgpio.gpio_write(self.gpio_handle, self.en_pin, 1)
         elif value < -self.deadband:
             # reverse
             lgpio.gpio_write(self.gpio_handle, self.in1_pin, 0)
             lgpio.gpio_write(self.gpio_handle, self.in2_pin, 1)
             lgpio.gpio_write(self.gpio_handle, self.en_pin, 1)
-
         else:
             self.stop()
 
@@ -141,13 +141,22 @@ class HAL:
     def __init__(self):
         self.gpio_handle = lgpio.gpiochip_open(GPIO_CHIP)
 
-        self.servo_min_us = getattr(config, "SERVO_MIN_US", 500)
-        self.servo_center_us = getattr(config, "SERVO_CENTER_US", 1500)
-        self.servo_max_us = getattr(config, "SERVO_MAX_US", 2500)
         self.servo_actuation_range = getattr(config, "SERVO_ACTUATION_RANGE", 180)
 
+        self.servo1_min_us = getattr(config, "SERVO1_MIN_US", getattr(config, "SERVO_MIN_US", 500))
+        self.servo1_center_us = getattr(config, "SERVO1_CENTER_US", getattr(config, "SERVO_CENTER_US", 1500))
+        self.servo1_max_us = getattr(config, "SERVO1_MAX_US", getattr(config, "SERVO_MAX_US", 2500))
+
+        self.servo2_min_us = getattr(config, "SERVO2_MIN_US", getattr(config, "SERVO_MIN_US", 500))
+        self.servo2_center_us = getattr(config, "SERVO2_CENTER_US", getattr(config, "SERVO_CENTER_US", 1500))
+        self.servo2_max_us = getattr(config, "SERVO2_MAX_US", getattr(config, "SERVO_MAX_US", 2500))
+
+        self.servo3_min_us = getattr(config, "SERVO3_MIN_US", getattr(config, "SERVO_MIN_US", 500))
+        self.servo3_center_us = getattr(config, "SERVO3_CENTER_US", getattr(config, "SERVO_CENTER_US", 1500))
+        self.servo3_max_us = getattr(config, "SERVO3_MAX_US", getattr(config, "SERVO_MAX_US", 2500))
+
         self._build_motors()
-        self._build_servo()
+        self._build_servos()
 
         self.stop_all()
 
@@ -161,7 +170,7 @@ class HAL:
             name=motor_configs[0]["name"],
             in1_pin=motor_configs[0]["in1"],
             in2_pin=motor_configs[0]["in2"],
-            en_pin=motor_configs[0]["pwm"],  
+            en_pin=motor_configs[0]["pwm"],
         )
 
         self.right_motor = DCMotorL298NDirect(
@@ -169,14 +178,17 @@ class HAL:
             name=motor_configs[1]["name"],
             in1_pin=motor_configs[1]["in1"],
             in2_pin=motor_configs[1]["in2"],
-            en_pin=motor_configs[1]["pwm"],   
+            en_pin=motor_configs[1]["pwm"],
         )
 
-    def _build_servo(self):
+    def _build_servos(self):
         channels = getattr(config, "PCA9685_CHANNELS", 16)
         address = getattr(config, "PCA9685_I2C_ADDRESS", 0x40)
         frequency = getattr(config, "PCA9685_PWM_FREQUENCY", 50)
-        servo_channel = getattr(config, "SERVO1_CHANNEL", 0)
+
+        servo1_channel = getattr(config, "SERVO1_CHANNEL", 0)
+        servo2_channel = getattr(config, "SERVO2_CHANNEL", 1)
+        servo3_channel = getattr(config, "SERVO3_CHANNEL", 2)
 
         self.servo_driver = ServoKitDriver(
             channels=channels,
@@ -186,28 +198,60 @@ class HAL:
 
         self.steering_servo = ServoKitServo(
             driver=self.servo_driver,
-            channel=servo_channel,
-            min_us=self.servo_min_us,
-            center_us=self.servo_center_us,
-            max_us=self.servo_max_us,
+            channel=servo1_channel,
+            min_us=self.servo1_min_us,
+            center_us=self.servo1_center_us,
+            max_us=self.servo1_max_us,
+            actuation_range=self.servo_actuation_range,
+        )
+
+        self.manipulator_servo1 = ServoKitServo(
+            driver=self.servo_driver,
+            channel=servo2_channel,
+            min_us=self.servo2_min_us,
+            center_us=self.servo2_center_us,
+            max_us=self.servo2_max_us,
+            actuation_range=self.servo_actuation_range,
+        )
+
+        self.manipulator_servo2 = ServoKitServo(
+            driver=self.servo_driver,
+            channel=servo3_channel,
+            min_us=self.servo3_min_us,
+            center_us=self.servo3_center_us,
+            max_us=self.servo3_max_us,
             actuation_range=self.servo_actuation_range,
         )
 
     def apply(self, cmd):
         left_motor_pwm_value = cmd.get("left_motor_pwm_value", 0.0)
         right_motor_pwm_value = cmd.get("right_motor_pwm_value", 0.0)
-        steering_pwm_value_us = cmd.get("steering_pwm_value_us", self.servo_center_us)
+
+        steering_pwm_value_us = cmd.get("steering_pwm_value_us", self.servo1_center_us)
+        manipulator_servo1_pwm_value_us = cmd.get(
+            "manipulator_servo1_pwm_value_us", self.servo2_center_us
+        )
+        manipulator_servo2_pwm_value_us = cmd.get(
+            "manipulator_servo2_pwm_value_us", self.servo3_center_us
+        )
 
         self.left_motor.apply(-left_motor_pwm_value)  # wiring is reversed
         self.right_motor.apply(right_motor_pwm_value)
+
         self.steering_servo.apply_pulse_us(steering_pwm_value_us)
+        self.manipulator_servo1.apply_pulse_us(manipulator_servo1_pwm_value_us)
+        self.manipulator_servo2.apply_pulse_us(manipulator_servo2_pwm_value_us)
 
     def stop_all(self):
         self.left_motor.stop()
         self.right_motor.stop()
         self.steering_servo.center()
+        self.manipulator_servo1.center()
+        self.manipulator_servo2.center()
 
     def cleanup(self):
         self.stop_all()
         self.steering_servo.release()
+        self.manipulator_servo1.release()
+        self.manipulator_servo2.release()
         lgpio.gpiochip_close(self.gpio_handle)
