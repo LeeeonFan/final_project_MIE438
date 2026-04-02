@@ -161,7 +161,7 @@ class HAL:
             name=motor_configs[0]["name"],
             in1_pin=motor_configs[0]["in1"],
             in2_pin=motor_configs[0]["in2"],
-            en_pin=motor_configs[0]["pwm"],   # using the old 'pwm' field as EN pin
+            en_pin=motor_configs[0]["pwm"],  
         )
 
         self.right_motor = DCMotorL298NDirect(
@@ -169,7 +169,7 @@ class HAL:
             name=motor_configs[1]["name"],
             in1_pin=motor_configs[1]["in1"],
             in2_pin=motor_configs[1]["in2"],
-            en_pin=motor_configs[1]["pwm"],   # using the old 'pwm' field as EN pin
+            en_pin=motor_configs[1]["pwm"],   
         )
 
     def _build_servo(self):
