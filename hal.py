@@ -161,7 +161,7 @@ class HAL:
             name=motor_configs[0]["name"],
             in1_pin=motor_configs[0]["in1"],
             in2_pin=motor_configs[0]["in2"],
-            en_pin=motor_configs[0]["pwm"],   # using the old 'pwm' field as EN pin
+            en_pin=motor_configs[0]["pwm"],  
         )
 
         self.right_motor = DCMotorL298NDirect(
@@ -169,7 +169,7 @@ class HAL:
             name=motor_configs[1]["name"],
             in1_pin=motor_configs[1]["in1"],
             in2_pin=motor_configs[1]["in2"],
-            en_pin=motor_configs[1]["pwm"],   # using the old 'pwm' field as EN pin
+            en_pin=motor_configs[1]["pwm"],   
         )
 
     def _build_servo(self):
@@ -198,7 +198,7 @@ class HAL:
         right_motor_pwm_value = cmd.get("right_motor_pwm_value", 0.0)
         steering_pwm_value_us = cmd.get("steering_pwm_value_us", self.servo_center_us)
 
-        self.left_motor.apply(left_motor_pwm_value)
+        self.left_motor.apply(-left_motor_pwm_value)  # wiring is reversed
         self.right_motor.apply(right_motor_pwm_value)
         self.steering_servo.apply_pulse_us(steering_pwm_value_us)
 
