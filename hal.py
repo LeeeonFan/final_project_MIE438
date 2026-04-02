@@ -57,7 +57,7 @@ class DCMotorL298NDirect:
             # forward
             lgpio.gpio_write(self.gpio_handle, self.in1_pin, 1)
             lgpio.gpio_write(self.gpio_handle, self.in2_pin, 0)
-            lgpio.gpio_write(self.gpio_handle, self.en_pin, 1)
+            lgpio.gpio_write(self.gpio_handle, self.en_pin, -1) # testing param
 
         elif value < -self.deadband:
             # reverse
