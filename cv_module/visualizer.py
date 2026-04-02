@@ -162,6 +162,23 @@ class Visualizer:
                 2,
             )
 
+        # Pen location
+        px_pen = py_pen = None
+        if state is not None and state.valid:
+            px_pen = int(round(state.pen_x * ppm))
+            py_pen = int(round(state.pen_y * ppm))
+            cv2.circle(board, (px_pen, py_pen), 7, (0, 200, 200), -1)
+            cv2.circle(board, (px_pen, py_pen), 9, (0, 140, 140), 2)
+            cv2.putText(
+                board,
+                "Pen",
+                (px_pen + 10, py_pen - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 180, 180),
+                2,
+            )
+
         if waypoint_controller is not None and waypoint_controller.has_waypoint():
             wp = waypoint_controller.waypoint
             wx, wy = int(round(wp.x * ppm)), int(round(wp.y * ppm))
@@ -184,8 +201,9 @@ class Visualizer:
                 2,
             )
 
-            if cx is not None and cy is not None:
-                cv2.line(board, (cx, cy), (wx, wy), (120, 0, 200), 2)
+            # Line from pen to waypoint (pen is the controlled point)
+            if px_pen is not None and py_pen is not None:
+                cv2.line(board, (px_pen, py_pen), (wx, wy), (120, 0, 200), 2)
 
         # Stretch board to exactly camera resolution, then append the panel.
         disp_w = calibrator.config.frame_width

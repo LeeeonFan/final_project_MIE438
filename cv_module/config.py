@@ -46,6 +46,12 @@ class CVConfig:
     scalar_alpha: float = 0.25
     max_dt_s: float = 0.30
 
+    # Pen offset from robot center (midpoint of head/tail markers),
+    # in the robot's body frame.
+    # forward = along heading (positive toward head), right = perpendicular (positive right).
+    pen_offset_forward_m: float = 0.119
+    pen_offset_right_m: float = 0.058
+
     # Misc
     show_debug_masks: bool = False
     calibration_json_path: str = "cv_calibration.json"

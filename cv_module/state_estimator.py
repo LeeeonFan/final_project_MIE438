@@ -25,6 +25,8 @@ class RobotState:
     head_y: float
     tail_x: float
     tail_y: float
+    pen_x: float
+    pen_y: float
     valid: bool
 
     def as_dict(self) -> dict:
@@ -41,6 +43,8 @@ class RobotState:
             "head_y": self.head_y,
             "tail_x": self.tail_x,
             "tail_y": self.tail_y,
+            "pen_x": self.pen_x,
+            "pen_y": self.pen_y,
             "valid": self.valid,
         }
 
@@ -123,6 +127,13 @@ class StateEstimator:
         self.prev_v = v
         self.prev_omega = omega
 
+        cos_t = math.cos(theta)
+        sin_t = math.sin(theta)
+        fwd = self.config.pen_offset_forward_m
+        rgt = self.config.pen_offset_right_m
+        pen_x = float(center[0]) + fwd * cos_t - rgt * sin_t
+        pen_y = float(center[1]) + fwd * sin_t + rgt * cos_t
+
         return RobotState(
             timestamp=t,
             x=float(center[0]),
@@ -136,5 +147,7 @@ class StateEstimator:
             head_y=float(self.filtered_head[1]),
             tail_x=float(self.filtered_tail[0]),
             tail_y=float(self.filtered_tail[1]),
+            pen_x=pen_x,
+            pen_y=pen_y,
             valid=True,
         )
