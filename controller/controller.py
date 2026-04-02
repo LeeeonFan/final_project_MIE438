@@ -117,24 +117,60 @@ def normalize_trigger(v):
     return v
 
 
+def apply_deadzone(value, deadzone):
+    """Zero out values within the deadzone, rescale the rest to [0, 1] range."""
+    if abs(value) < deadzone:
+        return 0.0
+    sign = 1.0 if value > 0 else -1.0
+    return sign * (abs(value) - deadzone) / (1.0 - deadzone)
+
+
+class EMAFilter:
+    """Exponential moving average filter for smoothing noisy analog input."""
+
+    def __init__(self, alpha=0.3):
+        self._alpha = alpha
+        self._value = 0.0
+        self._initialized = False
+
+    def update(self, raw):
+        if not self._initialized:
+            self._value = raw
+            self._initialized = True
+        else:
+            self._value = self._alpha * raw + (1.0 - self._alpha) * self._value
+        return self._value
+
+    def reset(self):
+        self._value = 0.0
+        self._initialized = False
+
+
 class ControllerManager:
     """
     Manages PS5 controller input and converts to robot commands (throttle, steering).
-    
-    Similar to teleop_client.py but uses PS5 controller instead of keyboard.
+
+    Default mapping:
+    - R2 → forward throttle, L2 → reverse throttle
     - Right Stick X → steering angle
-    - R2 (analog) → throttle (0.0 to 1.0)
-    - Left Stick Y or R2-L2 → throttle (alternative modes)
+    - Deadzone + EMA low-pass filter on all analog axes
     """
 
+    THROTTLE_MODE_TRIGGERS = "triggers"
     THROTTLE_MODE_R2 = "r2"
     THROTTLE_MODE_LEFT_STICK = "left_stick"
-    THROTTLE_MODE_TRIGGERS = "triggers"
 
-    def __init__(self, throttle_mode="r2"):
+    def __init__(self, throttle_mode="triggers", stick_deadzone=0.08,
+                 trigger_deadzone=0.05, smoothing_alpha=0.35):
         self.joystick = None
         self.servo_controller = ServoController()
         self.throttle_mode = throttle_mode
+        self.stick_deadzone = stick_deadzone
+        self.trigger_deadzone = trigger_deadzone
+
+        self._throttle_filter = EMAFilter(alpha=smoothing_alpha)
+        self._steering_filter = EMAFilter(alpha=smoothing_alpha)
+
         self._init_joystick()
 
     def _init_joystick(self):
@@ -214,37 +250,38 @@ class ControllerManager:
     def get_command_payload(self):
         """
         Get robot command payload (throttle, steering) from controller.
-        
-        Throttle source depends on throttle_mode:
-        - "r1": R1 held = 1.0 forward, released = 0.0
-        - "left_stick": Left stick Y (-1.0 to 1.0)
-        - "triggers": R2 forward, L2 backward
 
-        Steering always comes from left stick X (-1.0 to 1.0).
+        Throttle source depends on throttle_mode:
+        - "triggers" (default): R2 forward, L2 backward  (-1.0 to 1.0)
+        - "r2": R2 only (0.0 to 1.0)
+        - "left_stick": Left stick Y (-1.0 to 1.0)
+
+        Steering comes from right stick X (-1.0 to 1.0).
+
+        All analog values pass through a deadzone and EMA low-pass filter.
 
         Returns
         -------
         dict or None
-            {
-                "throttle": float,           # -1.0 (reverse) to 1.0 (forward)
-                "steering": float,           # -1.0 (left) to 1.0 (right)
-                "steering_pwm_us": int,      # PWM microseconds
-                "raw_input": dict            # Full raw input for debugging
-            }
         """
         raw_input = self.get_raw_input()
 
         if raw_input is None:
             return None
 
-        steering = raw_input["left_x"]
+        raw_steering = apply_deadzone(raw_input["right_x"], self.stick_deadzone)
 
-        if self.throttle_mode == self.THROTTLE_MODE_R2:
-            throttle = raw_input["r2"]
-        elif self.throttle_mode == self.THROTTLE_MODE_TRIGGERS:
-            throttle = raw_input["r2"] - raw_input["l2"]
+        if self.throttle_mode == self.THROTTLE_MODE_TRIGGERS:
+            r2 = apply_deadzone(raw_input["r2"], self.trigger_deadzone)
+            l2 = apply_deadzone(raw_input["l2"], self.trigger_deadzone)
+            raw_throttle = r2 - l2
+        elif self.throttle_mode == self.THROTTLE_MODE_R2:
+            raw_throttle = apply_deadzone(raw_input["r2"], self.trigger_deadzone)
         else:
-            throttle = -raw_input["left_y"]
+            raw_throttle = apply_deadzone(-raw_input["left_y"], self.stick_deadzone)
+
+        throttle = self._throttle_filter.update(raw_throttle)
+        steering = self._steering_filter.update(raw_steering)
 
         max_angle = self.servo_controller.max_steering_angle
         steering_angle = steering * max_angle
@@ -275,7 +312,7 @@ def main():
 
         screen.fill(BG)
         draw_text("PS5 Controller → Robot Commands", 30, 20, PURPLE)
-        draw_text("R2: throttle  |  Left Stick X: steering", 30, 55, GRAY)
+        draw_text("R2: forward  |  L2: backward  |  Right Stick X: steering", 30, 55, GRAY)
 
         if not controller_manager.is_connected():
             draw_text("No controller detected.", 30, 120, RED)
@@ -299,8 +336,8 @@ def main():
         l3 = raw_input["buttons"]["l3"]
         r3 = raw_input["buttons"]["r3"]
 
-        draw_stick(220, 300, 90, left_x, left_y, "Left Stick (Steering)", pressed=bool(l3))
-        draw_stick(460, 300, 90, right_x, right_y, "Right Stick", pressed=bool(r3))
+        draw_stick(220, 300, 90, left_x, left_y, "Left Stick", pressed=bool(l3))
+        draw_stick(460, 300, 90, right_x, right_y, "Right Stick (Steering)", pressed=bool(r3))
 
         draw_button(180, 170, 28, "L1", raw_input["buttons"]["l1"])
         draw_button(500, 170, 28, "R1", raw_input["buttons"]["r1"])
