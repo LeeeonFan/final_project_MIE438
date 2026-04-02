@@ -6,12 +6,12 @@ Reads PS5 controller input via ControllerManager and streams
 throttle/steering commands to the Pi over UDP (same format as teleop_client.py).
 
 Default control mapping:
-  - R2 (analog trigger): throttle (0.0 to 1.0)
+  - R2: forward throttle, L2: backward throttle
   - Right Stick X: steering (left/right)
 
 Alternative throttle modes via --throttle flag:
-  --throttle r2        (default) R2 trigger = variable throttle
-  --throttle triggers  R2 forward, L2 backward
+  --throttle triggers  (default) R2 forward, L2 backward
+  --throttle r2        R2 only (0.0 to 1.0)
   --throttle stick     Left stick Y forward/backward
 
 Usage:
@@ -53,8 +53,8 @@ def parse_args():
         help=f"Command send rate in Hz (default: {DEFAULT_SEND_HZ})"
     )
     parser.add_argument(
-        "--throttle", choices=["r2", "triggers", "stick"], default="r2",
-        help="Throttle source: r2 (default), triggers (R2-L2), stick (left stick Y)"
+        "--throttle", choices=["triggers", "r2", "stick"], default="triggers",
+        help="Throttle source: triggers (default R2-L2), r2 (R2 only), stick (left stick Y)"
     )
     return parser.parse_args()
 
@@ -64,8 +64,8 @@ def main():
     period = 1.0 / args.send_hz
 
     throttle_mode_map = {
-        "r2": ControllerManager.THROTTLE_MODE_R2,
         "triggers": ControllerManager.THROTTLE_MODE_TRIGGERS,
+        "r2": ControllerManager.THROTTLE_MODE_R2,
         "stick": ControllerManager.THROTTLE_MODE_LEFT_STICK,
     }
 
@@ -81,13 +81,13 @@ def main():
     print(f"Controller connected: {controller.joystick.get_name()}")
     print(f"Sending to {args.pi_ip}:{args.port} at {args.send_hz} Hz")
     print(f"\nControl mapping (throttle mode: {args.throttle}):")
-    if args.throttle == "r2":
+    if args.throttle == "triggers":
+        print("  R2: forward  |  L2: backward")
+    elif args.throttle == "r2":
         print("  R2: variable throttle (0.0 to 1.0)")
-    elif args.throttle == "triggers":
-        print("  R2: forward throttle  |  L2: reverse throttle")
     else:
         print("  Left Stick Y: throttle (up=forward, down=backward)")
-    print("  Left Stick X: steering (left=-1, right=+1)")
+    print("  Right Stick X: steering (left=-1, right=+1)")
     print("  Steering angle range: +/-{:.0f} deg".format(
         controller.servo_controller.max_steering_angle
     ))
