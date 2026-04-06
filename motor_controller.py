@@ -1,8 +1,6 @@
 """
 motor_controller.py
 
-Closed-loop motor speed controller for left and right motors.
-
 Input:
     cmd = {
         "left_shaft_speed": float,   # rad/s

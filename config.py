@@ -1,28 +1,6 @@
 """
 config.py
-
-Minimal configuration file for the robot framework.
-Only includes parameters needed by the current architecture.
 """
-
-# =========================================================
-# GPIO PINS (BCM numbering)
-# =========================================================
-
-# Left motor driver pins
-LEFT_MOTOR_IN1 = 17
-LEFT_MOTOR_IN2 = 27
-LEFT_MOTOR_PWM = 18
-
-# Right motor driver pins
-RIGHT_MOTOR_IN1 = 22
-RIGHT_MOTOR_IN2 = 23
-RIGHT_MOTOR_PWM = 19
-
-# Servo pin
-STEERING_SERVO_PIN = 12
-
-
 # =========================================================
 # PWM SETTINGS
 # =========================================================
@@ -42,11 +20,10 @@ SERVO_MAX_US = 2000          # microseconds
 # =========================================================
 
 # Motion manager
-MAX_SHAFT_SPEED = 100.0      # rad/s, must be measured or estimated
-MAX_STEERING_ANGLE = 30.0    # degrees, must be measured or chosen
-
+MAX_SHAFT_SPEED = 100.0      # rad/s
+MAX_STEERING_ANGLE = 30.0    # degrees
 # Drivetrain
-GEAR_RATIO = 1.0             # use actual value if needed in your controller
+GEAR_RATIO = 1.0        
 
 
 # =========================================================
@@ -89,9 +66,9 @@ WHEEL_RADIUS_M = 0.015       # 15 mm
 # NETWORK (laptop -> Pi bridge)
 # =========================================================
 
-PI_IP = "172.20.10.3"       # set to your Pi's IP address
+PI_IP = "172.20.10.3"       
 COMMAND_PORT = 5006
-COMMAND_TIMEOUT_S = 0.5       # seconds; Pi stops motors if no command received
+COMMAND_TIMEOUT_S = 0.5       # seconds
 MOTOR_PWM_FREQUENCY = 1000
 
 # =========================================================
