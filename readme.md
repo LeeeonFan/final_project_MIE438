@@ -1,6 +1,5 @@
-# Raspberry Pi Robot Control Framework
-
-A modular control framework for a small wheeled robot built around a **Raspberry Pi 5**, **L298N motor driver**, and **PCA9685 servo driver**. The project supports multiple command sources over UDP, including:
+# Raspberry Pi–based Mobile Whiteboard Robot
+This project is a Raspberry Pi–based mobile whiteboard robot designed to move across a whiteboard surface while carrying a simple manipulator that can hold either an eraser or a pen. In operation, the robot can navigate along the board, position its end effector, and support whiteboard interaction tasks such as writing, marking, or erasing. It is built around a **Raspberry Pi 5**, **L298N motor driver**, and **PCA9685 servo driver**. The project supports multiple command sources over UDP, including
 
 - **Keyboard teleoperation** from a laptop
 - **PS5 controller teleoperation**
@@ -21,8 +20,8 @@ HAL (Hardware Abstraction Layer)
     ↓
 Robot Hardware
 ```
-
-## What this project does
+This repository contains the software for the MIE438 final project. Mechanical and hardware design materials are organized and added here prior to submission.
+## Software Framework
 
 This framework receives high-level drive commands such as throttle and steering, converts them into actuator-space targets, and applies them to:
 
